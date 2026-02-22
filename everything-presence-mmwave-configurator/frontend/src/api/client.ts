@@ -25,7 +25,7 @@ import {
 } from './types';
 import { AppSettings } from './types';
 
-const handle = async <T>(res: Response): Promise<T> => {
+export const handle = async <T>(res: Response): Promise<T> => {
   if (!res.ok) {
     const text = await res.text();
     throw new Error(`${res.status} ${res.statusText}: ${text}`);
