@@ -77,6 +77,7 @@ services:
       context: ../everything-presence-mmwave-configurator
       dockerfile: Dockerfile
       target: standalone
+      network: host
     container_name: ep-dev-configurator
     restart: unless-stopped
     depends_on:
