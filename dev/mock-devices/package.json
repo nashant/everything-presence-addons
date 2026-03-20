@@ -1,0 +1,17 @@
+{
+  "name": "ep-mock-devices",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Mock Everything Presence devices for dev stack — publishes MQTT auto-discovery and simulates target tracking",
+  "scripts": {
+    "start": "tsx src/index.ts"
+  },
+  "dependencies": {
+    "mqtt": "^5.10.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0",
+    "@types/node": "^20.0.0"
+  }
+}

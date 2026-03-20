@@ -1,0 +1,13 @@
+# Environment files with secrets
+.env
+.env.local
+
+# Docker volumes / data directories
+ha-data/
+shared-tokens/
+
+# Node modules
+mock-devices/node_modules/
+
+# Runtime artifacts
+*.log

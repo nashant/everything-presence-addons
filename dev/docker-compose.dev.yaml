@@ -1,0 +1,116 @@
+##
+# EP Dev Stack — self-contained Home Assistant + mock devices + configurator
+#
+# Usage:
+#   docker compose -f dev/docker-compose.dev.yaml up
+#   docker compose -f dev/docker-compose.dev.yaml down -v
+#
+# The ha-bootstrap service automatically creates a dev user and writes
+# a long-lived access token to a shared volume. The configurator reads
+# it via HA_LONG_LIVED_TOKEN_FILE.
+##
+
+volumes:
+  ha-config:
+  ha-data:
+  shared-tokens:
+
+services:
+  # ---------- Home Assistant ----------
+  homeassistant:
+    image: ${HA_IMAGE:-ghcr.io/home-assistant/home-assistant:2026.2}
+    container_name: ep-dev-ha
+    restart: unless-stopped
+    ports:
+      - "${HA_PORT:-18123}:8123"
+    volumes:
+      - ha-config:/config
+      - ha-data:/config/.storage
+      - ./ha-config/configuration.yaml:/config/configuration.yaml:ro
+    environment:
+      TZ: UTC
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8123/api/onboarding"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 30s
+
+  # ---------- Mosquitto MQTT broker ----------
+  mosquitto:
+    image: eclipse-mosquitto:2
+    container_name: ep-dev-mosquitto
+    restart: unless-stopped
+    ports:
+      - "${MQTT_PORT:-1883}:1883"
+    volumes:
+      - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+    healthcheck:
+      test: ["CMD", "mosquitto_sub", "-t", "$$SYS/#", "-C", "1", "-W", "3"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+
+  # ---------- HA bootstrap (onboarding + token) ----------
+  ha-bootstrap:
+    image: alpine:3.19
+    container_name: ep-dev-bootstrap
+    depends_on:
+      homeassistant:
+        condition: service_healthy
+    volumes:
+      - shared-tokens:/shared
+      - ./scripts/bootstrap-ha.sh:/bootstrap-ha.sh:ro
+    environment:
+      HA_URL: "http://homeassistant:8123"
+      HA_DEV_USERNAME: ${HA_DEV_USERNAME:-dev}
+      HA_DEV_PASSWORD: ${HA_DEV_PASSWORD:-devpassword}
+      HA_DEV_NAME: ${HA_DEV_NAME:-Developer}
+    entrypoint: /bin/sh
+    command: ["/bootstrap-ha.sh"]
+    restart: "no"
+
+  # ---------- Configurator ----------
+  configurator:
+    build:
+      context: ../everything-presence-mmwave-configurator
+      dockerfile: Dockerfile
+      target: standalone
+    container_name: ep-dev-configurator
+    restart: unless-stopped
+    depends_on:
+      homeassistant:
+        condition: service_healthy
+      mosquitto:
+        condition: service_healthy
+      ha-bootstrap:
+        condition: service_completed_successfully
+    ports:
+      - "${CONFIGURATOR_PORT:-42069}:42069"
+    volumes:
+      - shared-tokens:/shared:ro
+    environment:
+      HA_BASE_URL: "http://homeassistant:8123/api"
+      HA_LONG_LIVED_TOKEN_FILE: "/shared/ha-token"
+      MQTT_BROKER_URL: "mqtt://mosquitto:1883"
+      PORT: "42069"
+      FIRMWARE_LAN_PORT: "38080"
+
+  # ---------- Mock EP devices (MQTT auto-discovery + target simulation) ----------
+  mock-devices:
+    build:
+      context: ./mock-devices
+      dockerfile: Dockerfile
+    container_name: ep-dev-mock-devices
+    restart: unless-stopped
+    depends_on:
+      mosquitto:
+        condition: service_healthy
+      ha-bootstrap:
+        condition: service_completed_successfully
+    volumes:
+      - ../everything-presence-mmwave-configurator/config/device-profiles:/config/device-profiles:ro
+    environment:
+      MQTT_BROKER: "mqtt://mosquitto:1883"
+      PROFILE_DIR: "/config/device-profiles"

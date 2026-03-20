@@ -1,0 +1,9 @@
+# EP Dev Stack — Home Assistant configuration
+# Minimal config. MQTT is configured programmatically via config entries
+# during bootstrap (not YAML) since HA 2024.x uses config entries for MQTT.
+
+homeassistant:
+  name: EP Dev
+
+# Enable default frontend, API, and other core integrations
+default_config:
