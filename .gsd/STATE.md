@@ -1,8 +1,8 @@
 # GSD State
 
 **Active Milestone:** M001 — Room-First Configurator Rewrite
-**Active Slice:** S01 — Backend foundation + dev stack (complete)
-**Phase:** slice-complete
+**Active Slice:** S02 — Data model migration + sensors array
+**Phase:** planning
 **Requirements Status:** 0 active · 0 validated · 0 deferred
 
 ## Milestone Registry
@@ -15,4 +15,4 @@
 - None
 
 ## Next Action
-Reassess roadmap after S01, then plan S02 (Room CRUD + canvas).
+Research + plan S02 (Data model migration + sensors array).

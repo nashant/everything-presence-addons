@@ -12,114 +12,82 @@
 - Page refresh preserves all state
 - Works behind HA ingress
 
-## Key Risks / Unknowns
+## Key Insight
 
-- Upstream backend structure — how much is reusable vs needs rewriting
-- Entity discovery complexity — the existing flow is deeply coupled to the wizard step sequence
-- Zone push pipeline — the zone writer depends on entity resolution and device profiles, which have specific initialization requirements
+The upstream codebase already has all the major components: RoomCanvas (1,685 lines), RoomBuilderPage (1,782), ZoneEditorPage (1,744), LiveTrackingPage (2,227), EntityDiscovery (797), zone push/read, room CRUD API. **We don't need to rebuild these.** The problem is strictly the entry flow — the WizardPage (3,322 lines) forces device-first ordering, and `RoomConfig` uses a singular `deviceId` instead of a `sensors[]` array.
+
+## What Changes
+
+1. **Data model**: `RoomConfig.deviceId` → `RoomConfig.sensors[]` (backend + frontend types, storage, all references)
+2. **Entry flow**: Dashboard → create room → draw walls → add sensor → entity discovery → place sensor (replace WizardPage with a lighter room-first flow)
+3. **Page wiring**: Existing pages (RoomBuilder, ZoneEditor, LiveTracking) read from `sensors[]` instead of `deviceId`
+
+## What Stays
+
+- RoomCanvas, ZoneCanvas, ZoneEditor components — reuse as-is
+- Room CRUD API — already has POST/GET/PUT/DELETE
+- Zone push/read pipeline (ZoneWriter, ZoneReader, EntityResolver)
+- Entity discovery backend + EntityDiscovery component
+- Device profiles, device discovery, transport abstraction
+- Settings page, device settings modal
+- All HA integration (REST, WebSocket, transport factory)
 
 ## Proof Strategy
 
-- Upstream assessment → retire in S01 by proving backend boots, API responds, and frontend renders
-- Entity discovery → retire in S03 by proving device entities are discovered and mapped for a mock device
-- Zone push → retire in S05 by proving zones are pushed to a mock device and read back correctly
+- Upstream assessment → retired in S01 (backend boots, API responds, frontend renders)
+- Data model migration → retire in S02 by proving sensors[] persists and all pages read it correctly
+- Room-first flow → retire in S03 by proving user can create room → add sensor → configure zones → see tracking
 
 ## Verification Classes
 
 - Contract verification: npm run build, backend vitest, frontend vitest, TS error count
 - Integration verification: Docker dev stack with mock HA + 3 mock EP devices at localhost:42069
-- Operational verification: none for M001 (HA ingress deferred to final polish)
 - UAT / human verification: user walks through create room → add sensors → configure zones → view tracking
 
 ## Milestone Definition of Done
 
-This milestone is complete only when all are true:
-
-- All slice deliverables are complete
 - A user can create a room, add 2 sensors, place them, draw zones, push zones, and see live tracking at localhost:42069
 - Page refresh preserves room, sensor, and zone state
 - Contract checks pass (build, tests, TS errors)
-- Success criteria re-checked against live behavior in Docker dev stack
 
 ## Slices
 
 - [x] **S01: Backend foundation + dev stack** `risk:high` `depends:[]`
   > After this: Backend boots on upstream, dev stack runs, API returns devices/profiles/rooms at localhost:42069
 
-- [ ] **S02: Room CRUD + canvas** `risk:high` `depends:[S01]`
-  > After this: User can create a room by drawing walls, see it rendered, edit outline, delete room — all at localhost:42069
+- [ ] **S02: Data model migration + sensors array** `risk:high` `depends:[S01]`
+  > After this: RoomConfig uses sensors[] array. Backend CRUD handles sensors (add/remove/patch placement). All existing pages updated to read sensors[0] instead of deviceId. Entity discovery stores mappings per sensor. Migration auto-populates sensors[] from legacy deviceId on startup.
 
-- [ ] **S03: Sensor attachment + entity discovery** `risk:high` `depends:[S02]`
-  > After this: User can select a device, run entity discovery, add it to a room, and place it on the canvas with the room outline visible
-
-- [ ] **S04: Multi-sensor rendering + placement** `risk:medium` `depends:[S03]`
-  > After this: User can add 2+ sensors to a room, see all with distinct colors, drag each independently, rotation slider works per sensor
-
-- [ ] **S05: Zone configuration + push** `risk:medium` `depends:[S03]`
-  > After this: User can create/edit/delete rectangular and polygon zones, push them to devices, zones appear on canvas
-
-- [ ] **S06: Live tracking + dashboard** `risk:low` `depends:[S04, S05]`
-  > After this: Live tracking page shows room with sensors, zones, and real-time target positions from mock devices. Navigation menu works between all views.
+- [ ] **S03: Room-first entry flow + integration** `risk:high` `depends:[S02]`
+  > After this: Dashboard shows room list with create button. New room flow: name → draw walls → done. "Add sensor" flow on existing room: pick device → entity discovery → place on canvas. WizardPage replaced or bypassed. Zone editor, live tracking, room builder all work with multi-sensor rooms. Full user flow exercised in Docker dev stack.
 
 ## Boundary Map
 
 ### S01 → S02
 
 Produces:
-- Working backend with Express server, device/profile/room API endpoints
-- Dev stack docker-compose with mock HA, MQTT, mock devices, configurator
-- Backend storage layer for rooms (JSON file persistence)
-- Frontend shell with Vite + Tailwind + React Router or view switching
-
-Consumes:
-- nothing (first slice)
+- Working backend with Express server, all upstream API endpoints
+- Dev stack docker-compose with mock HA, MQTT, mock devices
+- Test infrastructure (vitest, MockReadTransport, MockWriteClient, testApp)
+- Frontend shell rendering upstream UI
 
 ### S02 → S03
 
 Produces:
-- Room CRUD API (POST/GET/PUT/DELETE /api/rooms)
-- RoomCanvas component rendering room outline with wall drawing
-- Room list/selector UI
-- `RoomConfig` type with `id`, `name`, `units`, `roomShell`, `sensors[]`
+- `SensorAttachment` type with `deviceId`, `profileId`, `placement`, `entityMappings`, `label`
+- `RoomConfig.sensors: SensorAttachment[]` replacing `deviceId`/`profileId`/`entityMappings`/`devicePlacement`
+- Sensor CRUD routes: POST /api/rooms/:id/sensors, DELETE, PATCH placement
+- Startup migration: rooms with legacy `deviceId` auto-populate `sensors[0]`
+- All pages read `sensors[0]` instead of `room.deviceId` — no runtime behavior change yet
+- Backend + frontend types aligned
 
-Consumes:
-- Backend server + dev stack from S01
+### S03 (final slice)
 
-### S03 → S04
-
-Produces:
-- Entity discovery flow (backend + frontend)
-- Sensor attachment API (POST /api/rooms/:id/sensors, DELETE, PATCH placement)
-- Single sensor rendering on RoomCanvas with placement drag + rotation
-- `SensorAttachment` type with `deviceId`, `profileId`, `placement`, `label`
-
-Consumes:
-- Room CRUD + canvas from S02
-
-### S03 → S05
-
-Produces:
-- Entity mapping storage (device → HA entity ID resolution)
-- Device profile loader (zone limits, FoV, max range per profile)
-
-Consumes:
-- Room CRUD from S02
-
-### S04 → S06
-
-Produces:
-- Multi-sensor RoomCanvas with distinct colors, per-sensor selection, independent drag
-- `SensorRenderInfo` type and `SENSOR_COLORS` palette
-
-Consumes:
-- Single sensor rendering from S03
-
-### S05 → S06
-
-Produces:
-- Zone CRUD API + zone canvas
-- Zone push pipeline (allocator → zone writer → device)
-- Zone rendering on canvas (rectangular + polygon)
-
-Consumes:
-- Entity mapping + device profiles from S03
+Consumes everything from S02. Produces the complete room-first UX:
+- Dashboard with room list/cards and "New Room" button
+- Room creation flow (name + wall drawing, no device selection required)
+- "Add Sensor" flow on existing room (device select → entity discovery → placement)
+- Multi-sensor rendering on canvas with distinct colors
+- Zone editor reading from sensors[], push working for all participating sensors
+- Live tracking with all sensors in room
+- Navigation between dashboard ↔ room builder ↔ zone editor ↔ live tracking
