@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { fetchDevices, fetchProfiles, fetchSettings, updateSettings, ingressAware } from './api/client';
-import { fetchRooms } from './api/rooms';
+import { createRoom, fetchRooms } from './api/rooms';
 import { DiscoveredDevice, RoomConfig, LiveState } from './api/types';
 import { ZoneEditorPage } from './pages/ZoneEditorPage';
 import { RoomBuilderPage } from './pages/RoomBuilderPage';
@@ -502,9 +502,13 @@ function App() {
       });
   }, [liveState, deviceToRoom]);
 
+  // Track which room we're adding a device to (null = normal wizard mode)
+  const [addDeviceRoomId, setAddDeviceRoomId] = useState<string | null>(null);
+
   // "Add Device" handler: navigate to wizard with the room pre-selected
   const handleAddDevice = (roomId: string) => {
     setSelectedRoomId(roomId);
+    setAddDeviceRoomId(roomId);
     setWizardStep('device');
     updateSettings({ wizardStep: 'device' }).catch(() => null);
     setView('wizard');
@@ -529,11 +533,12 @@ function App() {
             devices={devices}
             profiles={profiles}
             rooms={rooms}
-            selectedDeviceId={newRoomDeviceId}
             selectedProfileId={selectedProfileId}
+            existingRoomId={addDeviceRoomId}
             onBack={() => {
               // Reset wizard when going back
               setWizardStep('device');
+              setAddDeviceRoomId(null);
               updateSettings({ wizardStep: 'device' }).catch(() => null);
               setView('dashboard');
             }}
@@ -563,6 +568,7 @@ function App() {
               updateSettings({ wizardCompleted: true }).catch(() => null);
               setWizardCompleted(true);
               setWizardStep('finish');
+              setAddDeviceRoomId(null);
               setView('dashboard');
             }}
             initialStep={wizardStep}

@@ -46,6 +46,8 @@ interface WizardPageProps {
     speed: number | null;
     angle: number | null;
   }>;
+  /** When set, wizard operates in "Add Device to existing room" mode */
+  existingRoomId?: string | null;
 }
 
 type StepKey =
@@ -83,11 +85,12 @@ export const WizardPage: React.FC<WizardPageProps> = ({
   setZonesReady,
   liveState,
   targetPositions,
+  existingRoomId = null,
 }) => {
   const [deviceId, setDeviceId] = useState<string | null>(selectedDeviceId ?? null);
   const [profileId, setProfileId] = useState<string | null>(selectedProfileId ?? null);
-  const [roomId, setRoomId] = useState<string | null>(rooms[0]?.id ?? null);
-  const [roomPath, setRoomPath] = useState<'new' | 'existing' | 'skip' | null>(null);
+  const [roomId, setRoomId] = useState<string | null>(existingRoomId ?? rooms[0]?.id ?? null);
+  const [roomPath, setRoomPath] = useState<'new' | 'existing' | 'skip' | null>(existingRoomId ? 'existing' : null);
   const [newRoomName, setNewRoomName] = useState('');
   const [units, setUnits] = useState<'metric' | 'imperial'>('metric');
   const [creating, setCreating] = useState(false);
