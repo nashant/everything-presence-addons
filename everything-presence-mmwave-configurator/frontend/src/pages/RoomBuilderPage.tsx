@@ -1111,11 +1111,12 @@ export const RoomBuilderPage: React.FC<RoomBuilderPageProps> = ({
                   onFurnitureSelect={(id) => {
                     setSelectedFurnitureId(id);
                     setShowFurnitureLibrary(false);
+                    setActiveSection(null);
                   }}
                   onFurnitureChange={handleFurnitureChange}
                   doors={selectedRoom.doors ?? []}
                   selectedDoorId={selectedDoorId}
-                  onDoorSelect={setSelectedDoorId}
+                  onDoorSelect={(id) => { setSelectedDoorId(id); setActiveSection(null); }}
                   onDoorChange={handleDoorChange}
                   isDoorPlacementMode={isDoorPlacementMode}
                   onWallSegmentClick={handleWallSegmentClick}
@@ -1405,7 +1406,10 @@ export const RoomBuilderPage: React.FC<RoomBuilderPageProps> = ({
                 {(selectedRoom?.doors ?? []).map((door) => (
                   <div
                     key={door.id}
-                    onClick={() => setSelectedDoorId(door.id)}
+                    onClick={() => {
+                      setSelectedDoorId(door.id);
+                      setActiveSection(null);
+                    }}
                     className={`rounded-lg border p-2 cursor-pointer transition-all ${
                       selectedDoorId === door.id
                         ? 'border-aqua-500 bg-aqua-600/20'
@@ -1452,6 +1456,7 @@ export const RoomBuilderPage: React.FC<RoomBuilderPageProps> = ({
                     onClick={() => {
                       setSelectedFurnitureId(f.id);
                       setShowFurnitureLibrary(false);
+                      setActiveSection(null);
                     }}
                     className={`rounded-lg border p-2 cursor-pointer transition-all ${
                       selectedFurnitureId === f.id

@@ -24,7 +24,7 @@ export const FurnitureEditor: React.FC<FurnitureEditorProps> = ({
   };
 
   return (
-    <div className="fixed inset-y-0 right-0 z-50 w-80 bg-slate-900/95 backdrop-blur border-l border-slate-700 shadow-2xl flex flex-col">
+    <div className="fixed top-14 bottom-0 right-0 z-[55] w-80 bg-slate-900/95 backdrop-blur border-l border-slate-700 shadow-2xl flex flex-col">
       {/* Header */}
       <div className="flex items-center justify-between px-6 py-4 border-b border-slate-700">
         <div className="flex items-center gap-3">
