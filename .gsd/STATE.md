@@ -1,7 +1,7 @@
 # GSD State
 
 **Active Milestone:** M001 — Room-First Configurator Rewrite
-**Active Slice:** S02 — Data model migration + sensors array
+**Active Slice:** S02 — Room-first entry flow
 **Phase:** planning
 **Requirements Status:** 0 active · 0 validated · 0 deferred
 
@@ -15,4 +15,4 @@
 - None
 
 ## Next Action
-Research + plan S02 (Data model migration + sensors array).
+Research + plan S02 (Room-first entry flow).
