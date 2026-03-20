@@ -11,6 +11,8 @@ import { FLOOR_MATERIALS } from '../components/FloorMaterials';
 import { useDisplaySettings } from '../hooks/useDisplaySettings';
 import { getInstallationAngleSuggestion } from '../utils/rotationSuggestion';
 import { useDeviceMappings } from '../contexts/DeviceMappingsContext';
+import { EditorSidebar, type EditorSection, type SectionDef } from '../components/EditorSidebar';
+import { PopOutPanel } from '../components/PopOutPanel';
 
 interface RoomBuilderPageProps {
   onBack?: () => void;
@@ -68,8 +70,7 @@ export const RoomBuilderPage: React.FC<RoomBuilderPageProps> = ({
   const [displayUnits, setDisplayUnits] = useState<'metric' | 'imperial'>('metric');
   const [zoom, setZoom] = useState(1.1);
   const [isCanvasDragging, setIsCanvasDragging] = useState(false);
-  const [showSettings, setShowSettings] = useState(false);
-  const [showNavMenu, setShowNavMenu] = useState(false);
+  const [activeSection, setActiveSection] = useState<EditorSection | null>(null);
   // Display settings (persisted to localStorage)
   const {
     showWalls, setShowWalls,
@@ -792,6 +793,12 @@ export const RoomBuilderPage: React.FC<RoomBuilderPageProps> = ({
       setRooms((prev) => prev.map((r) => (r.id === selectedRoom.id ? result.room : r)));
       onWizardProgress?.({ outlineDone: true, placementDone: true });
       setError(null);
+      // Navigate back to dashboard after successful save
+      if (onNavigate) {
+        onNavigate('liveDashboard');
+      } else if (onBack) {
+        onBack();
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save room');
     } finally {
@@ -838,6 +845,32 @@ export const RoomBuilderPage: React.FC<RoomBuilderPageProps> = ({
     rotationSuggestion &&
     rotationSuggestion.suggestedAngle === currentInstallationAngle;
   const isZeroSuggestion = rotationSuggestion?.suggestedAngle === 0;
+
+  const hasDevice = !!selectedRoom?.deviceId;
+  const wallCount = selectedRoom?.roomShell?.points?.length ?? 0;
+  const doorCount = selectedRoom?.doors?.length ?? 0;
+  const furnitureCount = selectedRoom?.furniture?.length ?? 0;
+
+  const sidebarSections: SectionDef[] = [
+    { id: 'walls', icon: '🧱', label: 'Walls', badge: wallCount > 0 ? `${wallCount}` : undefined },
+    { id: 'devices', icon: '📡', label: 'Devices', badge: hasDevice ? '1' : undefined },
+    { id: 'zones', icon: '📐', label: 'Zones', disabled: !hasDevice, disabledHint: 'Add a device first' },
+    { id: 'doors', icon: '🚪', label: 'Doors', badge: doorCount > 0 ? `${doorCount}` : undefined },
+    { id: 'furniture', icon: '🪑', label: 'Furniture', badge: furnitureCount > 0 ? `${furnitureCount}` : undefined },
+    { id: 'settings', icon: '⚙️', label: 'Settings' },
+  ];
+
+  const handleSectionClick = useCallback((section: EditorSection) => {
+    setActiveSection((prev) => (prev === section ? null : section));
+  }, []);
+
+  const handleBackToDashboard = useCallback(() => {
+    if (onNavigate) {
+      onNavigate('liveDashboard');
+    } else if (onBack) {
+      onBack();
+    }
+  }, [onNavigate, onBack]);
 
   return (
     <div className="fixed inset-0 bg-slate-950 overflow-hidden">
@@ -908,96 +941,59 @@ export const RoomBuilderPage: React.FC<RoomBuilderPageProps> = ({
         </div>
       )}
 
-      {/* Navigation (top left) */}
-      {onBack && !onNavigate && (
-        <button
-          onClick={onBack}
-          className="absolute top-6 left-6 z-40 group rounded-xl border border-slate-700/50 bg-slate-900/90 backdrop-blur px-4 py-2.5 text-sm font-semibold text-slate-100 shadow-lg transition-all hover:border-slate-600 hover:bg-slate-800 hover:shadow-xl active:scale-95"
-        >
-          <span className="inline-block transition-transform group-hover:-translate-x-0.5">←</span> Back
-        </button>
-      )}
+      {/* Editor Sidebar (left) */}
+      <EditorSidebar
+        sections={sidebarSections}
+        activeSection={activeSection}
+        onSectionClick={handleSectionClick}
+        onBack={handleBackToDashboard}
+      />
 
-      {onNavigate && (
-        <div className={`absolute top-6 left-6 ${showNavMenu ? 'z-[60]' : 'z-40'}`}>
-          <button
-            onClick={() => setShowNavMenu(!showNavMenu)}
-            className="group rounded-xl border border-slate-700/50 bg-slate-900/90 backdrop-blur px-4 py-2.5 text-sm font-semibold text-slate-100 shadow-lg transition-all hover:border-slate-600 hover:bg-slate-800 hover:shadow-xl active:scale-95"
+      {/* Top Bar (room selector + save) — z-[60] to stay above pop-out panels (z-50) */}
+      <div className="absolute top-0 left-20 right-0 z-[60] flex items-center justify-between border-b border-slate-700/50 bg-slate-900/90 backdrop-blur px-4 py-3">
+        <div className="flex items-center gap-3">
+          <span className="text-sm text-slate-400 font-medium">Room:</span>
+          <select
+            className="rounded-lg border border-slate-700 bg-slate-800/70 px-3 py-1.5 text-sm text-slate-100 transition-colors focus:border-aqua-500 focus:ring-1 focus:ring-aqua-500/50 focus:outline-none font-medium"
+            value={selectedRoomId ?? ''}
+            onChange={(e) => {
+              const roomId = e.target.value || null;
+              setSelectedRoomId(roomId);
+              const room = rooms.find((r) => r.id === roomId);
+              if (room?.profileId) setSelectedProfileId(room.profileId);
+            }}
           >
-            <span className="inline-block transition-transform group-hover:rotate-90">☰</span> Menu
-          </button>
-
-          {showNavMenu && (
-            <>
-              {/* Backdrop to close menu */}
-              <div
-                className="fixed inset-0 z-30"
-                onClick={() => setShowNavMenu(false)}
-              />
-
-              {/* Menu dropdown */}
-              <div className="absolute top-14 left-0 z-50 min-w-[200px] rounded-xl border border-slate-700/50 bg-slate-900/95 backdrop-blur shadow-2xl overflow-hidden">
-                <div className="p-2 space-y-1">
-                  <button
-                    onClick={() => {
-                      onNavigate('liveDashboard');
-                      setShowNavMenu(false);
-                    }}
-                    className="w-full text-left px-4 py-2.5 text-sm font-medium text-slate-100 rounded-lg transition-all hover:bg-aqua-600/20 hover:text-aqua-400 active:scale-95"
-                  >
-                    📡 Live Dashboard
-                  </button>
-                  <button
-                    onClick={() => {
-                      onNavigate('wizard');
-                      setShowNavMenu(false);
-                    }}
-                    className="w-full text-left px-4 py-2.5 text-sm font-medium text-slate-100 rounded-lg transition-all hover:bg-aqua-600/20 hover:text-aqua-400 active:scale-95"
-                  >
-                    ➕ Add Device
-                  </button>
-                  <button
-                    onClick={() => {
-                      onNavigate('zoneEditor');
-                      setShowNavMenu(false);
-                    }}
-                    className="w-full text-left px-4 py-2.5 text-sm font-medium text-slate-100 rounded-lg transition-all hover:bg-aqua-600/20 hover:text-aqua-400 active:scale-95"
-                  >
-                    📐 Zone Editor
-                  </button>
-                  <button
-                    onClick={() => {
-                      onNavigate('settings');
-                      setShowNavMenu(false);
-                    }}
-                    className="w-full text-left px-4 py-2.5 text-sm font-medium text-slate-100 rounded-lg transition-all hover:bg-aqua-600/20 hover:text-aqua-400 active:scale-95"
-                  >
-                    ⚙️ Settings
-                  </button>
-                </div>
-              </div>
-            </>
+            <option value="">Select room</option>
+            {rooms.map((room) => (
+              <option key={room.id} value={room.id}>
+                {room.name}
+              </option>
+            ))}
+          </select>
+          {selectedRoom && !hasDevice && (
+            <span className="text-xs text-amber-400/80">No device linked</span>
+          )}
+          {selectedDevice && (
+            <span className="text-xs text-emerald-400/80">{selectedDevice.name || selectedDevice.id}</span>
           )}
         </div>
-      )}
+        <button
+          onClick={handleSaveRoom}
+          disabled={saving}
+          className="rounded-xl bg-gradient-to-r from-aqua-600 to-aqua-500 px-6 py-2 text-sm font-bold text-white shadow-lg shadow-aqua-500/30 transition-all hover:shadow-xl hover:shadow-aqua-500/40 disabled:opacity-50 active:scale-95"
+        >
+          {saving ? 'Saving...' : 'Save Room'}
+        </button>
+      </div>
 
-      {/* Floating Save Button (top right) */}
-      <button
-        onClick={handleSaveRoom}
-        disabled={saving}
-        className="absolute top-6 right-6 z-40 rounded-xl bg-gradient-to-r from-aqua-600 to-aqua-500 px-6 py-2.5 text-sm font-bold text-white shadow-lg shadow-aqua-500/30 transition-all hover:shadow-xl hover:shadow-aqua-500/40 disabled:opacity-50 active:scale-95"
-      >
-        {saving ? 'Saving...' : 'Save Room'}
-      </button>
-
-      {/* Canvas Content - Full Page */}
+      {/* Canvas Content - offset by sidebar (left) and top bar */}
       {!selectedRoom && (
-        <div className="flex h-full w-full items-center justify-center">
+        <div className="flex h-full w-full items-center justify-center pl-20 pt-14">
           <div className="max-w-md rounded-2xl border border-slate-700 bg-gradient-to-br from-slate-900 to-slate-800 p-8 shadow-2xl">
             <div className="text-center space-y-4">
               <div className="text-6xl">🏗️</div>
               <h2 className="text-2xl font-bold text-white">No Room Selected</h2>
-              <p className="text-sm text-slate-300">Select a room from the controls to start drawing walls.</p>
+              <p className="text-sm text-slate-300">Select a room from the dropdown to start editing.</p>
             </div>
           </div>
         </div>
@@ -1005,7 +1001,7 @@ export const RoomBuilderPage: React.FC<RoomBuilderPageProps> = ({
 
       {selectedRoom && (
         <div
-          className="h-full w-full overflow-hidden overscroll-contain touch-none"
+          className="h-full w-full pl-20 pt-14 overflow-hidden overscroll-contain touch-none"
           onWheelCapture={(e) => {
             if (isCanvasDragging) return;
             if (e.cancelable) e.preventDefault();
@@ -1165,104 +1161,294 @@ export const RoomBuilderPage: React.FC<RoomBuilderPageProps> = ({
                     );
                   }}
                 />
-          {/* Floating Room Selector (top center) */}
-          <div className="absolute top-6 left-1/2 -translate-x-1/2 z-40 flex items-center gap-2 rounded-xl border border-slate-700/50 bg-slate-900/90 backdrop-blur px-4 py-2.5 text-sm text-slate-200 shadow-xl">
-            <span className="text-slate-400 font-medium">Room:</span>
-            <select
-              className="rounded-lg border border-slate-700 bg-slate-800/70 px-3 py-1.5 text-slate-100 transition-colors focus:border-aqua-500 focus:ring-1 focus:ring-aqua-500/50 focus:outline-none font-medium"
-              value={selectedRoomId ?? ''}
-              onChange={(e) => {
-                const roomId = e.target.value || null;
-                setSelectedRoomId(roomId);
-                const room = rooms.find((r) => r.id === roomId);
-                if (room?.profileId) setSelectedProfileId(room.profileId);
-              }}
+          {/* Pop-out Panels (right side, triggered by sidebar sections) */}
+
+          {/* Walls Panel */}
+          {activeSection === 'walls' && (
+            <PopOutPanel
+              title="Walls"
+              subtitle={wallCount > 0 ? `${wallCount} points drawn` : 'Draw your room outline'}
+              onClose={() => setActiveSection(null)}
             >
-              <option value="">Select room</option>
-              {rooms.map((room) => (
-                <option key={room.id} value={room.id}>
-                  {room.name}
-                </option>
-              ))}
-            </select>
-          </div>
+              <div className="flex flex-col gap-2 text-sm">
+                <button
+                  className={`rounded-xl border px-4 py-2.5 font-semibold shadow-lg transition-all active:scale-95 ${
+                    isDrawingWall
+                      ? 'border-aqua-600/50 bg-aqua-600/20 text-aqua-100 hover:bg-aqua-600/30'
+                      : 'border-slate-700/50 bg-slate-800/50 text-slate-200 hover:border-slate-600'
+                  }`}
+                  onClick={() => setIsDrawingWall((prev) => !prev)}
+                >
+                  {isDrawingWall ? '✕ Stop drawing (Esc)' : '✏️ Add Wall (A)'}
+                </button>
+                {(isDrawingWall || wallCount > 0) && (
+                  <>
+                    <button
+                      className="rounded-xl border border-emerald-600/50 bg-emerald-600/10 px-4 py-2.5 font-semibold text-emerald-100 shadow-lg transition-all hover:bg-emerald-600/20 disabled:opacity-40 active:scale-95"
+                      onClick={handleCloseLoop}
+                      disabled={!selectedRoom || wallCount < 2}
+                    >
+                      ✓ Finish (Enter)
+                    </button>
+                    <button
+                      className="rounded-xl border border-amber-600/50 bg-amber-600/10 px-4 py-2.5 font-semibold text-amber-100 shadow-lg transition-all hover:bg-amber-600/20 disabled:opacity-40 active:scale-95"
+                      onClick={removeLastPoint}
+                      disabled={!selectedRoom || wallCount === 0}
+                    >
+                      ↶ Undo (Del)
+                    </button>
+                    <button
+                      className="rounded-xl border border-rose-600/50 bg-rose-600/10 px-4 py-2.5 font-semibold text-rose-100 shadow-lg transition-all hover:bg-rose-600/20 disabled:opacity-40 active:scale-95"
+                      onClick={handleClear}
+                      disabled={!selectedRoom}
+                    >
+                      🗑️ Clear All
+                    </button>
+                  </>
+                )}
+              </div>
+              <div className="mt-3 text-[10px] text-slate-500">
+                Tips: A to draw, Enter to finish, Esc to cancel, Del to undo
+              </div>
+            </PopOutPanel>
+          )}
 
-          {/* Drawing Controls (left side) */}
-          <div className="absolute top-24 left-6 z-40 rounded-xl border border-slate-700/50 bg-slate-900/90 backdrop-blur p-3 shadow-xl">
-            <div className="flex flex-col gap-2 text-sm">
-              <button
-                className={`rounded-xl border px-4 py-2.5 font-semibold shadow-lg transition-all active:scale-95 ${
-                  isDrawingWall
-                    ? 'border-aqua-600/50 bg-aqua-600/20 text-aqua-100 hover:bg-aqua-600/30'
-                    : 'border-slate-700/50 bg-slate-800/50 text-slate-200 hover:border-slate-600'
-                }`}
-                onClick={() => setIsDrawingWall((prev) => !prev)}
-              >
-                {isDrawingWall ? '✕ Stop (Esc)' : '✏️ Add wall (A)'}
-              </button>
-              <button
-                className="rounded-xl border border-emerald-600/50 bg-emerald-600/10 px-4 py-2.5 font-semibold text-emerald-100 shadow-lg transition-all hover:bg-emerald-600/20 disabled:opacity-40 active:scale-95"
-                onClick={handleCloseLoop}
-                disabled={!selectedRoom || (selectedRoom.roomShell?.points?.length ?? 0) < 2}
-              >
-                ✓ Finish (Enter)
-              </button>
-              <button
-                className="rounded-xl border border-amber-600/50 bg-amber-600/10 px-4 py-2.5 font-semibold text-amber-100 shadow-lg transition-all hover:bg-amber-600/20 disabled:opacity-40 active:scale-95"
-                onClick={removeLastPoint}
-                disabled={!selectedRoom || !(selectedRoom.roomShell?.points?.length)}
-              >
-                ↶ Undo (Del)
-              </button>
-              <button
-                className="rounded-xl border border-rose-600/50 bg-rose-600/10 px-4 py-2.5 font-semibold text-rose-100 shadow-lg transition-all hover:bg-rose-600/20 disabled:opacity-40 active:scale-95"
-                onClick={handleClear}
-                disabled={!selectedRoom}
-              >
-                🗑️ Clear
-              </button>
+          {/* Devices Panel */}
+          {activeSection === 'devices' && (
+            <PopOutPanel
+              title="Devices"
+              subtitle={hasDevice ? (selectedDevice?.name || selectedDevice?.id || 'Device linked') : 'No device linked'}
+              onClose={() => setActiveSection(null)}
+            >
+              {!hasDevice ? (
+                <div className="space-y-4">
+                  <div className="text-center py-4 text-slate-400 text-sm">
+                    No device is linked to this room.
+                  </div>
+                  <button
+                    onClick={() => {
+                      if (onNavigate) onNavigate('wizard');
+                    }}
+                    className="w-full rounded-xl bg-gradient-to-r from-aqua-600 to-aqua-500 px-4 py-3 text-sm font-bold text-white shadow-lg shadow-aqua-500/30 transition-all hover:shadow-xl hover:shadow-aqua-500/40 active:scale-95"
+                  >
+                    + Add Device
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <div className="rounded-lg border border-emerald-600/30 bg-emerald-600/10 px-3 py-2 text-sm text-emerald-200">
+                    {selectedDevice?.name || selectedDevice?.id || 'Device linked'}
+                  </div>
+                  {/* Device Placement */}
+                  <div className="space-y-2">
+                    <div className="font-semibold text-slate-200 text-sm">Placement</div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <label className="flex items-center gap-2">
+                        <span className="w-6 text-xs text-slate-400">X</span>
+                        <input
+                          type="number"
+                          className="w-full rounded-md border border-slate-700 bg-slate-800/70 px-2 py-1 text-sm text-slate-100 focus:border-aqua-500 focus:ring-1 focus:ring-aqua-500/50 focus:outline-none"
+                          value={selectedRoom?.devicePlacement?.x ?? 0}
+                          onChange={(e) => {
+                            if (!selectedRoom) return;
+                            const placement = { ...(selectedRoom.devicePlacement ?? { x: 0, y: 0, rotationDeg: 0 }) };
+                            placement.x = Number(e.target.value) || 0;
+                            const nextRoom: RoomConfig = { ...selectedRoom, devicePlacement: placement };
+                            setRooms((prev) => prev.map((r) => (r.id === selectedRoom.id ? nextRoom : r)));
+                          }}
+                        />
+                      </label>
+                      <label className="flex items-center gap-2">
+                        <span className="w-6 text-xs text-slate-400">Y</span>
+                        <input
+                          type="number"
+                          className="w-full rounded-md border border-slate-700 bg-slate-800/70 px-2 py-1 text-sm text-slate-100 focus:border-aqua-500 focus:ring-1 focus:ring-aqua-500/50 focus:outline-none"
+                          value={selectedRoom?.devicePlacement?.y ?? 0}
+                          onChange={(e) => {
+                            if (!selectedRoom) return;
+                            const placement = { ...(selectedRoom.devicePlacement ?? { x: 0, y: 0, rotationDeg: 0 }) };
+                            placement.y = Number(e.target.value) || 0;
+                            const nextRoom: RoomConfig = { ...selectedRoom, devicePlacement: placement };
+                            setRooms((prev) => prev.map((r) => (r.id === selectedRoom.id ? nextRoom : r)));
+                          }}
+                        />
+                      </label>
+                    </div>
+                    <label className="flex items-center gap-2">
+                      <span className="w-14 text-xs text-slate-400">Rotation</span>
+                      <input
+                        type="range"
+                        min={-180}
+                        max={180}
+                        step={1}
+                        value={selectedRoom?.devicePlacement?.rotationDeg ?? 0}
+                        onChange={(e) => {
+                          if (!selectedRoom) return;
+                          const placement = { ...(selectedRoom.devicePlacement ?? { x: 0, y: 0, rotationDeg: 0 }) };
+                          placement.rotationDeg = Number(e.target.value) || 0;
+                          const nextRoom: RoomConfig = { ...selectedRoom, devicePlacement: placement };
+                          setRooms((prev) => prev.map((r) => (r.id === selectedRoom.id ? nextRoom : r)));
+                        }}
+                        onMouseUp={(e) => {
+                          handleRotationSuggestion(Number((e.currentTarget as HTMLInputElement).value) || 0);
+                        }}
+                        onTouchEnd={(e) => {
+                          handleRotationSuggestion(Number((e.currentTarget as HTMLInputElement).value) || 0);
+                        }}
+                        className="w-full"
+                      />
+                      <span className="text-xs text-slate-300">{selectedRoom?.devicePlacement?.rotationDeg ?? 0}°</span>
+                    </label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        className="rounded-md border border-slate-700 px-2 py-1.5 text-xs font-semibold text-slate-100 transition hover:border-aqua-500"
+                        onClick={() => {
+                          if (!selectedRoom) return;
+                          const nextRoom: RoomConfig = {
+                            ...selectedRoom,
+                            devicePlacement: { ...(selectedRoom.devicePlacement ?? {}), x: 0, y: 0 },
+                          };
+                          setRooms((prev) => prev.map((r) => (r.id === selectedRoom.id ? nextRoom : r)));
+                        }}
+                      >
+                        Center
+                      </button>
+                      <button
+                        className="rounded-md border border-slate-700 px-2 py-1.5 text-xs font-semibold text-slate-100 transition hover:border-aqua-500"
+                        onClick={() => {
+                          if (!selectedRoom) return;
+                          const nextRoom: RoomConfig = {
+                            ...selectedRoom,
+                            devicePlacement: { ...(selectedRoom.devicePlacement ?? {}), rotationDeg: 0 },
+                          };
+                          setRooms((prev) => prev.map((r) => (r.id === selectedRoom.id ? nextRoom : r)));
+                        }}
+                      >
+                        Reset rotation
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </PopOutPanel>
+          )}
 
-              {/* Furniture Button */}
-              <div className="border-t border-slate-700/50 my-2"></div>
-              <button
-                className={`rounded-xl border px-4 py-2.5 font-semibold shadow-lg transition-all active:scale-95 ${
-                  showFurnitureLibrary
-                    ? 'border-purple-600/50 bg-purple-600/20 text-purple-100'
-                    : 'border-slate-700/50 bg-slate-800/50 text-slate-200 hover:border-slate-600'
-                }`}
-                onClick={() => {
-                  setShowFurnitureLibrary((v) => !v);
-                  setSelectedFurnitureId(null); // Close furniture settings when opening library
-                }}
-                disabled={!selectedRoom}
-              >
-                🪑 Add Furniture
-              </button>
+          {/* Zones Panel */}
+          {activeSection === 'zones' && (
+            <PopOutPanel
+              title="Zones"
+              subtitle={hasDevice ? 'Configure detection zones' : 'Add a device first'}
+              onClose={() => setActiveSection(null)}
+            >
+              {!hasDevice ? (
+                <div className="text-center py-8 text-slate-400 text-sm">
+                  Add a device to this room to configure zones.
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <p className="text-sm text-slate-300">
+                    Zone editing for this room's device.
+                  </p>
+                  <button
+                    onClick={() => {
+                      if (onNavigate) onNavigate('zoneEditor');
+                    }}
+                    className="w-full rounded-xl border border-blue-500/50 bg-blue-600/20 px-4 py-3 text-sm font-semibold text-blue-100 transition-all hover:bg-blue-600/30 active:scale-95"
+                  >
+                    📐 Open Zone Editor
+                  </button>
+                </div>
+              )}
+            </PopOutPanel>
+          )}
 
-              <button
-                className={`rounded-xl border px-4 py-2.5 font-semibold shadow-lg transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed ${
-                  isDoorPlacementMode
-                    ? 'border-aqua-600/50 bg-aqua-600/20 text-aqua-100 hover:bg-aqua-600/30'
-                    : 'border-slate-700/50 bg-slate-800/50 text-slate-200 hover:border-slate-600'
-                }`}
-                onClick={handleAddDoor}
-                disabled={!selectedRoom || !selectedRoom.roomShell?.points || selectedRoom.roomShell.points.length < 3}
-              >
-                {isDoorPlacementMode ? '✕ Cancel' : '🚪 Add Door'}
-              </button>
+          {/* Doors Panel */}
+          {activeSection === 'doors' && (
+            <PopOutPanel
+              title="Doors"
+              subtitle={doorCount > 0 ? `${doorCount} door${doorCount !== 1 ? 's' : ''} placed` : 'Click a wall to place a door'}
+              onClose={() => setActiveSection(null)}
+            >
+              <div className="flex flex-col gap-2 text-sm">
+                <button
+                  className={`rounded-xl border px-4 py-2.5 font-semibold shadow-lg transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed ${
+                    isDoorPlacementMode
+                      ? 'border-aqua-600/50 bg-aqua-600/20 text-aqua-100 hover:bg-aqua-600/30'
+                      : 'border-slate-700/50 bg-slate-800/50 text-slate-200 hover:border-slate-600'
+                  }`}
+                  onClick={handleAddDoor}
+                  disabled={!selectedRoom || !selectedRoom.roomShell?.points || selectedRoom.roomShell.points.length < 3}
+                >
+                  {isDoorPlacementMode ? '✕ Cancel Placement' : '+ Add Door'}
+                </button>
+                {doorCount === 0 && !isDoorPlacementMode && (
+                  <div className="text-center py-4 text-slate-400 text-xs">
+                    Draw walls first, then place doors on wall segments.
+                  </div>
+                )}
+                {(selectedRoom?.doors ?? []).map((door) => (
+                  <div
+                    key={door.id}
+                    onClick={() => setSelectedDoorId(door.id)}
+                    className={`rounded-lg border p-2 cursor-pointer transition-all ${
+                      selectedDoorId === door.id
+                        ? 'border-aqua-500 bg-aqua-600/20'
+                        : 'border-slate-700 bg-slate-800/30 hover:border-slate-600'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-slate-200">
+                        Door on wall {door.segmentIndex + 1}
+                      </span>
+                      <span className="text-[10px] text-slate-400">{door.widthMm}mm</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </PopOutPanel>
+          )}
 
-              <button
-                className={`rounded-xl border px-4 py-2.5 font-semibold shadow-lg transition-all active:scale-95 ${
-                  showSettings
-                    ? 'border-aqua-600/50 bg-aqua-600/20 text-aqua-100'
-                    : 'border-slate-700/50 bg-slate-800/50 text-slate-200 hover:border-slate-600'
-                }`}
-                onClick={() => setShowSettings((v) => !v)}
-              >
-                ⚙️ Settings
-              </button>
-            </div>
-          </div>
+          {/* Furniture Panel */}
+          {activeSection === 'furniture' && (
+            <PopOutPanel
+              title="Furniture"
+              subtitle={furnitureCount > 0 ? `${furnitureCount} item${furnitureCount !== 1 ? 's' : ''}` : 'Add furniture to your room'}
+              onClose={() => setActiveSection(null)}
+            >
+              <div className="flex flex-col gap-2 text-sm">
+                <button
+                  className={`rounded-xl border px-4 py-2.5 font-semibold shadow-lg transition-all active:scale-95 ${
+                    showFurnitureLibrary
+                      ? 'border-purple-600/50 bg-purple-600/20 text-purple-100'
+                      : 'border-slate-700/50 bg-slate-800/50 text-slate-200 hover:border-slate-600'
+                  }`}
+                  onClick={() => {
+                    setShowFurnitureLibrary((v) => !v);
+                    setSelectedFurnitureId(null);
+                  }}
+                  disabled={!selectedRoom}
+                >
+                  {showFurnitureLibrary ? '✕ Close Library' : '+ Add Furniture'}
+                </button>
+                {(selectedRoom?.furniture ?? []).map((f) => (
+                  <div
+                    key={f.id}
+                    onClick={() => {
+                      setSelectedFurnitureId(f.id);
+                      setShowFurnitureLibrary(false);
+                    }}
+                    className={`rounded-lg border p-2 cursor-pointer transition-all ${
+                      selectedFurnitureId === f.id
+                        ? 'border-purple-500 bg-purple-600/20'
+                        : 'border-slate-700 bg-slate-800/30 hover:border-slate-600'
+                    }`}
+                  >
+                    <span className="text-xs text-slate-200">{f.typeId}</span>
+                  </div>
+                ))}
+              </div>
+            </PopOutPanel>
+          )}
 
           {/* Floating Zoom Controls (bottom right) */}
           <div className="absolute bottom-6 right-6 z-40 flex flex-col gap-2">
@@ -1293,18 +1479,12 @@ export const RoomBuilderPage: React.FC<RoomBuilderPageProps> = ({
           </div>
 
           {/* Settings Panel */}
-          {showSettings && (
-            <div className="absolute top-24 right-6 z-50 w-96 max-w-full rounded-xl border border-slate-700/50 bg-slate-900/95 backdrop-blur p-4 text-sm text-slate-100 shadow-2xl space-y-3 animate-in slide-in-from-right-4 fade-in duration-200">
-                      <div className="flex items-center justify-between">
-                        <span className="font-semibold text-slate-100">Settings</span>
-                        <button
-                          className="rounded-md border border-slate-700 px-2 py-1 hover:border-aqua-500"
-                          onClick={() => setShowSettings(false)}
-                        >
-                          Close
-                        </button>
-                      </div>
-
+          {activeSection === 'settings' && (
+            <PopOutPanel
+              title="Settings"
+              subtitle="Room display settings"
+              onClose={() => setActiveSection(null)}
+            >
                       <div className="space-y-1">
                         <div className="font-semibold text-slate-200">Canvas</div>
                         <label className="flex items-center gap-2">
@@ -1348,97 +1528,6 @@ export const RoomBuilderPage: React.FC<RoomBuilderPageProps> = ({
                             onClick={() => setDisplayUnits('imperial')}
                           >
                             Imperial
-                          </button>
-                        </div>
-                      </div>
-
-                      <div className="space-y-1">
-                        <div className="font-semibold text-slate-200">Device placement</div>
-                        <div className="grid grid-cols-2 gap-2">
-                          <label className="flex items-center gap-2">
-                            <span className="w-6">X</span>
-                            <input
-                              type="number"
-                              className="w-full rounded-md border border-slate-700 bg-slate-800/70 px-2 py-1 text-slate-100 focus:border-aqua-500 focus:ring-1 focus:ring-aqua-500/50 focus:outline-none"
-                              value={selectedRoom?.devicePlacement?.x ?? 0}
-                              onChange={(e) => {
-                                if (!selectedRoom) return;
-                                const placement = { ...(selectedRoom.devicePlacement ?? { x: 0, y: 0, rotationDeg: 0 }) };
-                                placement.x = Number(e.target.value) || 0;
-                                const nextRoom: RoomConfig = { ...selectedRoom, devicePlacement: placement };
-                                setRooms((prev) => prev.map((r) => (r.id === selectedRoom.id ? nextRoom : r)));
-                              }}
-                            />
-                          </label>
-                          <label className="flex items-center gap-2">
-                            <span className="w-6">Y</span>
-                            <input
-                              type="number"
-                              className="w-full rounded-md border border-slate-700 bg-slate-800/70 px-2 py-1 text-slate-100 focus:border-aqua-500 focus:ring-1 focus:ring-aqua-500/50 focus:outline-none"
-                              value={selectedRoom?.devicePlacement?.y ?? 0}
-                              onChange={(e) => {
-                                if (!selectedRoom) return;
-                                const placement = { ...(selectedRoom.devicePlacement ?? { x: 0, y: 0, rotationDeg: 0 }) };
-                                placement.y = Number(e.target.value) || 0;
-                                const nextRoom: RoomConfig = { ...selectedRoom, devicePlacement: placement };
-                                setRooms((prev) => prev.map((r) => (r.id === selectedRoom.id ? nextRoom : r)));
-                              }}
-                            />
-                          </label>
-                        </div>
-                        <label className="flex items-center gap-2">
-                          <span className="w-14">Rotation</span>
-                          <input
-                            type="range"
-                            min={-180}
-                            max={180}
-                            step={1}
-                            value={selectedRoom?.devicePlacement?.rotationDeg ?? 0}
-                            onChange={(e) => {
-                              if (!selectedRoom) return;
-                              const placement = { ...(selectedRoom.devicePlacement ?? { x: 0, y: 0, rotationDeg: 0 }) };
-                              placement.rotationDeg = Number(e.target.value) || 0;
-                              const nextRoom: RoomConfig = { ...selectedRoom, devicePlacement: placement };
-                              setRooms((prev) => prev.map((r) => (r.id === selectedRoom.id ? nextRoom : r)));
-                            }}
-                            onMouseUp={(e) => {
-                              handleRotationSuggestion(Number((e.currentTarget as HTMLInputElement).value) || 0);
-                            }}
-                            onTouchEnd={(e) => {
-                              handleRotationSuggestion(Number((e.currentTarget as HTMLInputElement).value) || 0);
-                            }}
-                            className="w-full"
-                          />
-                          <span>{selectedRoom?.devicePlacement?.rotationDeg ?? 0}</span>
-                        </label>
-                        <div className="grid grid-cols-2 gap-2">
-                          <button
-                            className="rounded-md border border-slate-700 px-2 py-1 text-[11px] font-semibold text-slate-100 transition hover:border-aqua-500"
-                            onClick={() => {
-                              if (!selectedRoom) return;
-                              const nextRoom: RoomConfig = {
-                                ...selectedRoom,
-                                devicePlacement: { ...(selectedRoom.devicePlacement ?? {}), x: 0, y: 0 },
-                              };
-                              setRooms((prev) => prev.map((r) => (r.id === selectedRoom.id ? nextRoom : r)));
-                            }}
-                            disabled={!selectedRoom}
-                          >
-                            Center
-                          </button>
-                          <button
-                            className="rounded-md border border-slate-700 px-2 py-1 text-[11px] font-semibold text-slate-100 transition hover:border-aqua-500"
-                            onClick={() => {
-                              if (!selectedRoom) return;
-                              const nextRoom: RoomConfig = {
-                                ...selectedRoom,
-                                devicePlacement: { ...(selectedRoom.devicePlacement ?? {}), rotationDeg: 0 },
-                              };
-                              setRooms((prev) => prev.map((r) => (r.id === selectedRoom.id ? nextRoom : r)));
-                            }}
-                            disabled={!selectedRoom}
-                          >
-                            Reset rot
                           </button>
                         </div>
                       </div>
@@ -1548,11 +1637,11 @@ export const RoomBuilderPage: React.FC<RoomBuilderPageProps> = ({
                           </span>
                         </label>
                       </div>
-                    </div>
-                  )}
+            </PopOutPanel>
+          )}
 
-          {/* Floating Info Bar (bottom left) */}
-          <div className="absolute bottom-6 left-6 z-40 rounded-xl border border-slate-700/50 bg-slate-900/90 backdrop-blur px-4 py-3 shadow-xl max-w-xl">
+          {/* Floating Info Bar (bottom left, offset for sidebar) */}
+          <div className="absolute bottom-6 left-24 z-40 rounded-xl border border-slate-700/50 bg-slate-900/90 backdrop-blur px-4 py-3 shadow-xl max-w-xl">
             <div className="flex flex-col gap-2 text-xs text-slate-200">
               <div className="flex items-center gap-4">
                 <span className="text-slate-400 font-medium">Cursor:</span>
