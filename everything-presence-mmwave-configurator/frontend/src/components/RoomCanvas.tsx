@@ -726,8 +726,8 @@ export const RoomCanvas: React.FC<RoomCanvasProps> = ({
         }}
         onMouseOut={() => onSegmentHover?.(null)}
         onMouseDown={(e) => {
-          if ((e as any).button === 2) {
-            // right-drag to pan
+          if ((e as any).button === 2 || (e as any).button === 1) {
+            // right-drag or middle-drag to pan
             const svgPoint = getSvgPoint(e as any, svgRef.current);
             if (!svgPoint || !onPanChange) return;
             e.preventDefault();

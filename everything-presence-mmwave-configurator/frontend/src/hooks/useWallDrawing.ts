@@ -5,9 +5,11 @@ interface UseWallDrawingOptions {
   snapGridMm: number;
   onPointsChange: (points: Point[]) => void;
   currentPoints: Point[];
+  /** When true, constrain drawing to horizontal, vertical, or 45° lines. Default true. */
+  angleSnap?: boolean;
 }
 
-export function useWallDrawing({ snapGridMm, onPointsChange, currentPoints }: UseWallDrawingOptions) {
+export function useWallDrawing({ snapGridMm, onPointsChange, currentPoints, angleSnap = true }: UseWallDrawingOptions) {
   const [isDrawingWall, setIsDrawingWall] = useState(false);
   const [pendingStart, setPendingStart] = useState<Point | null>(null);
   const [previewPoint, setPreviewPoint] = useState<Point | null>(null);
@@ -43,6 +45,7 @@ export function useWallDrawing({ snapGridMm, onPointsChange, currentPoints }: Us
   );
 
   const snapDirection = useCallback((start: Point, end: Point) => {
+    if (!angleSnap) return end;
     const dx = end.x - start.x;
     const dy = end.y - start.y;
     if (dx === 0 && dy === 0) return end;
@@ -59,7 +62,7 @@ export function useWallDrawing({ snapGridMm, onPointsChange, currentPoints }: Us
     const signY = dy >= 0 ? 1 : -1;
     const mag = Math.max(absDx, absDy);
     return { x: start.x + signX * mag, y: start.y + signY * mag };
-  }, []);
+  }, [angleSnap]);
 
   const handleCanvasClick = useCallback(
     (pt: Point) => {

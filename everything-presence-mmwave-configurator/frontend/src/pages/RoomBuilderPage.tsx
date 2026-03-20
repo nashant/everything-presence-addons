@@ -458,6 +458,7 @@ export const RoomBuilderPage: React.FC<RoomBuilderPageProps> = ({
     snapGridMm,
     onPointsChange: handlePointsChange,
     currentPoints: selectedRoom?.roomShell?.points ?? [],
+    angleSnap: angleSnapEnabled,
   });
 
   useEffect(() => {
@@ -1010,7 +1011,23 @@ export const RoomBuilderPage: React.FC<RoomBuilderPageProps> = ({
             }
             e.stopPropagation();
             const delta = e.deltaY > 0 ? -0.1 : 0.1;
-            setZoom((z) => Math.min(5, Math.max(0.1, z + delta)));
+            // Zoom toward cursor position
+            const rect = e.currentTarget.getBoundingClientRect();
+            const cx = e.clientX - rect.left;
+            const cy = e.clientY - rect.top;
+            const fracX = cx / rect.width - 0.5;  // -0.5 to 0.5
+            const fracY = cy / rect.height - 0.5;
+            setZoom((prevZoom) => {
+              const nextZoom = Math.min(5, Math.max(0.1, prevZoom + delta));
+              if (nextZoom === prevZoom) return prevZoom;
+              // Adjust pan so the world point under cursor stays fixed
+              const scale = 1 - prevZoom / nextZoom;
+              setPanOffsetMm((prev) => ({
+                x: prev.x + fracX * rangeMm * scale / prevZoom,
+                y: prev.y + fracY * rangeMm * scale / prevZoom,
+              }));
+              return nextZoom;
+            });
           }}
         >
                 <RoomCanvas
@@ -1183,13 +1200,6 @@ export const RoomBuilderPage: React.FC<RoomBuilderPageProps> = ({
                 </button>
                 {(isDrawingWall || wallCount > 0) && (
                   <>
-                    <button
-                      className="rounded-xl border border-emerald-600/50 bg-emerald-600/10 px-4 py-2.5 font-semibold text-emerald-100 shadow-lg transition-all hover:bg-emerald-600/20 disabled:opacity-40 active:scale-95"
-                      onClick={handleCloseLoop}
-                      disabled={!selectedRoom || wallCount < 2}
-                    >
-                      ✓ Finish (Enter)
-                    </button>
                     <button
                       className="rounded-xl border border-amber-600/50 bg-amber-600/10 px-4 py-2.5 font-semibold text-amber-100 shadow-lg transition-all hover:bg-amber-600/20 disabled:opacity-40 active:scale-95"
                       onClick={removeLastPoint}
