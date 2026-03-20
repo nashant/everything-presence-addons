@@ -1,12 +1,11 @@
 # GSD State
 
 **Active Milestone:** M001 — Room-First Configurator Rewrite
-**Active Slice:** S02 — Room-first entry flow
-**Phase:** planning
-**Requirements Status:** 0 active · 0 validated · 0 deferred
+**Active Slice:** S02 — Room-first entry flow (complete)
+**Phase:** milestone-complete
 
 ## Milestone Registry
-- 🔄 **M001:** Room-First Configurator Rewrite
+- ✅ **M001:** Room-First Configurator Rewrite
 
 ## Recent Decisions
 - D001–D006: Branch strategy, npm/Docker fixes, test infra porting
@@ -15,4 +14,4 @@
 - None
 
 ## Next Action
-Research + plan S02 (Room-first entry flow).
+M001 complete. All slices done (S01 + S02).

@@ -55,7 +55,7 @@ The upstream codebase already has everything: RoomCanvas, RoomBuilderPage, ZoneE
 - [x] **S01: Backend foundation + dev stack** `risk:high` `depends:[]`
   > After this: Backend boots on upstream, dev stack runs, API returns devices/profiles/rooms at localhost:42069
 
-- [ ] **S02: Room-first entry flow** `risk:medium` `depends:[S01]`
+- [x] **S02: Room-first entry flow** `risk:medium` `depends:[S01]`
   > After this: Floors + HA import on backend. Dashboard shows rooms by floor. Create room (name + floor + walls) without device. Add device to existing room. Zone editor and live tracking work. Full flow in Docker dev stack.
 
 ## Boundary Map

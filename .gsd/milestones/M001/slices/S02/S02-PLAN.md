@@ -47,7 +47,7 @@
 
 ## Tasks
 
-- [ ] **T01: Floor backend — type, storage, CRUD route, HA transport** `est:1h`
+- [x] **T01: Floor backend — type, storage, CRUD route, HA transport** `est:1h`
   - Why: Floors are the new organizational layer. Need the type, persistence, API, and HA floor registry fetch before anything else.
   - Files: `backend/src/domain/types.ts`, `backend/src/config/storage.ts`, `backend/src/routes/floors.ts` (new), `backend/src/ha/readTransport.ts`, `backend/src/ha/wsReadTransport.ts`, `backend/src/ha/restReadTransport.ts`, `backend/src/__tests__/helpers/mockReadTransport.ts`, `backend/src/server.ts`
   - Do:
@@ -62,7 +62,7 @@
   - Verify: `npx vitest run` passes, `npm run build` — 0 backend TS errors
   - Done when: `GET /api/floors` returns `{ floors: [] }`, floor CRUD works, `listFloorRegistry()` exists on transport interface
 
-- [ ] **T02: HA import endpoint** `est:45m`
+- [x] **T02: HA import endpoint** `est:45m`
   - Why: The "Import from HA" button needs a backend endpoint that fetches HA floors + areas and creates local floors + rooms.
   - Files: `backend/src/routes/import.ts` (new), `backend/src/server.ts`, `backend/src/__tests__/integration/import.test.ts` (new)
   - Do:
@@ -76,7 +76,7 @@
   - Verify: `npx vitest run` passes, new import test passes
   - Done when: Import endpoint creates floors + rooms from mock HA data, skips duplicates, returns counts
 
-- [ ] **T03: Frontend — floor types, API client, RoomConfig.floorId** `est:30m`
+- [x] **T03: Frontend — floor types, API client, RoomConfig.floorId** `est:30m`
   - Why: Frontend needs the floor type, API calls, and updated RoomConfig before building the dashboard.
   - Files: `frontend/src/api/types.ts`, `frontend/src/api/floors.ts` (new), `frontend/src/api/rooms.ts`, `frontend/src/api/client.ts`
   - Do:
@@ -87,7 +87,7 @@
   - Verify: `npm run build` — frontend TS errors ≤ 112
   - Done when: Floor API client exists, `RoomConfig.floorId` in frontend types
 
-- [ ] **T04: Dashboard page + room-first App.tsx** `est:2h`
+- [x] **T04: Dashboard page + room-first App.tsx** `est:2h`
   - Why: This is the core UX change — replacing wizard-first with dashboard-first.
   - Files: `frontend/src/pages/DashboardPage.tsx` (new), `frontend/src/App.tsx`
   - Do:
@@ -109,7 +109,7 @@
   - Verify: `npm run build` passes, browser at localhost:42069 shows dashboard with floor groups
   - Done when: Dashboard renders rooms by floor, "New Room" creates deviceless room, "Import from HA" works
 
-- [ ] **T05: "Add Device" flow on existing room** `est:1h`
+- [x] **T05: "Add Device" flow on existing room** `est:1h`
   - Why: Rooms created without a device need a way to attach one later — this completes the room-first cycle.
   - Files: `frontend/src/pages/DashboardPage.tsx`, `frontend/src/App.tsx`
   - Do:
@@ -122,7 +122,7 @@
   - Verify: Browser — create room → "Add Device" → pick device → entity discovery → placement → room builder shows device on canvas
   - Done when: Full room-first flow works: create room → draw walls → add device → place device → zones → live tracking
 
-- [ ] **T06: End-to-end Docker verification + cleanup** `est:30m`
+- [x] **T06: End-to-end Docker verification + cleanup** `est:30m`
   - Why: Final integration check in Docker dev stack with mock HA. Commit all work.
   - Files: (verification only, no new files)
   - Do:
