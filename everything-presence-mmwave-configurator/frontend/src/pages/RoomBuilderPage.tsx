@@ -1111,7 +1111,6 @@ export const RoomBuilderPage: React.FC<RoomBuilderPageProps> = ({
                   onFurnitureSelect={(id) => {
                     setSelectedFurnitureId(id);
                     setShowFurnitureLibrary(false);
-                    setActiveSection(null);
                   }}
                   onFurnitureChange={handleFurnitureChange}
                   doors={selectedRoom.doors ?? []}
@@ -1456,7 +1455,6 @@ export const RoomBuilderPage: React.FC<RoomBuilderPageProps> = ({
                     onClick={() => {
                       setSelectedFurnitureId(f.id);
                       setShowFurnitureLibrary(false);
-                      setActiveSection(null);
                     }}
                     className={`rounded-lg border p-2 cursor-pointer transition-all ${
                       selectedFurnitureId === f.id
