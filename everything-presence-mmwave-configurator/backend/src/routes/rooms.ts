@@ -214,6 +214,7 @@ export const createRoomsRouter = (): Router => {
   const normalizeRoom = (body: any, existingId?: string): RoomConfig => ({
     id: body?.id ?? existingId ?? uuidv4(),
     name: typeof body?.name === 'string' && body.name.trim() ? body.name.trim() : 'Untitled room',
+    floorId: typeof body?.floorId === 'string' && body.floorId.trim() ? body.floorId.trim() : undefined,
     deviceId: typeof body?.deviceId === 'string' && body.deviceId.trim() ? body.deviceId.trim() : undefined,
     profileId: typeof body?.profileId === 'string' && body.profileId.trim() ? body.profileId.trim() : undefined,
     units: body?.units === 'imperial' ? 'imperial' : 'metric',

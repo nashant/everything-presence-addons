@@ -7,6 +7,7 @@ import {
   EntityState,
   DeviceRegistryEntry,
   AreaRegistryEntry,
+  FloorRegistryEntry,
   StateChangeCallback,
   HaTarget,
 } from './readTransport';
@@ -260,6 +261,23 @@ export class RestReadTransport implements IHaReadTransport {
       return await this.listAreaRegistryViaTemplate();
     } catch (err) {
       logger.error({ err }, 'RestReadTransport: Failed to list area registry');
+      return [];
+    }
+  }
+
+  async listFloorRegistry(): Promise<FloorRegistryEntry[]> {
+    try {
+      const url = this.buildUrl('/config/floor_registry');
+      const res = await fetch(url, { headers: this.headers });
+
+      if (res.ok) {
+        return (await res.json()) as FloorRegistryEntry[];
+      }
+
+      logger.warn('RestReadTransport: Floor registry endpoint not available');
+      return [];
+    } catch (err) {
+      logger.error({ err }, 'RestReadTransport: Failed to list floor registry');
       return [];
     }
   }

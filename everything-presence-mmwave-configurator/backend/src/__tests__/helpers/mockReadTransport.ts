@@ -4,6 +4,7 @@ import type {
 	DeviceRegistryEntry,
 	EntityState,
 	AreaRegistryEntry,
+	FloorRegistryEntry,
 	HaTarget,
 	StateChangeCallback,
 } from "../../ha/readTransport";
@@ -22,6 +23,7 @@ export class MockReadTransport implements IHaReadTransport {
 	private devices: DeviceRegistryEntry[] = [];
 	private entities: EntityRegistryEntry[] = [];
 	private areas: AreaRegistryEntry[] = [];
+	private floors: FloorRegistryEntry[] = [];
 	private states = new Map<string, EntityState>();
 	private services = new Map<string, string[]>(); // domain -> service names
 	private subscriptions = new Map<
@@ -41,6 +43,10 @@ export class MockReadTransport implements IHaReadTransport {
 
 	addArea(area: AreaRegistryEntry): void {
 		this.areas.push(area);
+	}
+
+	addFloor(floor: FloorRegistryEntry): void {
+		this.floors.push(floor);
 	}
 
 	setState(entityId: string, state: EntityState): void {
@@ -65,6 +71,7 @@ export class MockReadTransport implements IHaReadTransport {
 		this.devices = [];
 		this.entities = [];
 		this.areas = [];
+		this.floors = [];
 		this.states.clear();
 		this.services.clear();
 		this.subscriptions.clear();
@@ -82,6 +89,10 @@ export class MockReadTransport implements IHaReadTransport {
 
 	async listAreaRegistry(): Promise<AreaRegistryEntry[]> {
 		return [...this.areas];
+	}
+
+	async listFloorRegistry(): Promise<FloorRegistryEntry[]> {
+		return [...this.floors];
 	}
 
 	async getServicesForTarget(

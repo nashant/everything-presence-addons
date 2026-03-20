@@ -194,9 +194,17 @@ export interface EntityMappings {
   [key: string]: unknown;
 }
 
+export interface Floor {
+  id: string;
+  name: string;
+  level: number;
+  icon?: string | null;
+}
+
 export interface RoomConfig {
   id: string;
   name: string;
+  floorId?: string;
   deviceId?: string;
   profileId?: string;
   units: 'metric' | 'imperial';

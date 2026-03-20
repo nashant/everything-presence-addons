@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { AppSettings, CustomFloorMaterial, CustomFurnitureType, RoomConfig } from '../domain/types';
+import { AppSettings, CustomFloorMaterial, CustomFurnitureType, Floor, RoomConfig } from '../domain/types';
 import { logger } from '../logger';
 
 // Use /config/everything-presence-zone-configurator for persistent storage across add-on reinstalls
@@ -9,6 +9,7 @@ import { logger } from '../logger';
 const DATA_DIR = process.env.DATA_DIR ?? '/config/everything-presence-zone-configurator';
 const ROOMS_FILE = path.join(DATA_DIR, 'rooms.json');
 const SETTINGS_FILE = path.join(DATA_DIR, 'settings.json');
+const FLOORS_FILE = path.join(DATA_DIR, 'floors.json');
 const CUSTOM_FLOORS_FILE = path.join(DATA_DIR, 'custom-floors.json');
 const CUSTOM_FURNITURE_FILE = path.join(DATA_DIR, 'custom-furniture.json');
 
@@ -96,6 +97,27 @@ const writeSettings = (settings: AppSettings) => {
   fs.writeFileSync(SETTINGS_FILE, JSON.stringify(settings, null, 2));
 };
 
+// Floors (organizational, not floor materials)
+const readFloors = (): Floor[] => {
+  ensureDataDir();
+  if (!fs.existsSync(FLOORS_FILE)) {
+    return [];
+  }
+  try {
+    const raw = fs.readFileSync(FLOORS_FILE, 'utf-8');
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? (parsed as Floor[]) : [];
+  } catch (error) {
+    logger.warn({ error }, 'Failed to read floors.json; returning empty');
+    return [];
+  }
+};
+
+const writeFloors = (floors: Floor[]) => {
+  ensureDataDir();
+  fs.writeFileSync(FLOORS_FILE, JSON.stringify(floors, null, 2));
+};
+
 // Custom floor materials
 const readCustomFloors = (): CustomFloorMaterial[] => {
   ensureDataDir();
@@ -160,6 +182,30 @@ export const storage = {
       return false;
     }
     writeRooms(next);
+    return true;
+  },
+
+  // Floors
+  listFloors: (): Floor[] => readFloors(),
+  getFloor: (id: string): Floor | undefined => readFloors().find((f) => f.id === id),
+  saveFloor: (floor: Floor): Floor => {
+    const floors = readFloors();
+    const idx = floors.findIndex((f) => f.id === floor.id);
+    if (idx >= 0) {
+      floors[idx] = floor;
+    } else {
+      floors.push(floor);
+    }
+    writeFloors(floors);
+    return floor;
+  },
+  deleteFloor: (id: string): boolean => {
+    const floors = readFloors();
+    const next = floors.filter((f) => f.id !== id);
+    if (next.length === floors.length) {
+      return false;
+    }
+    writeFloors(next);
     return true;
   },
 

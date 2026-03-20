@@ -1,0 +1,636 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.createDeviceMappingsRouter = void 0;
+const express_1 = require("express");
+const deviceMappingStorage_1 = require("../config/deviceMappingStorage");
+const deviceEntityService_1 = require("../domain/deviceEntityService");
+const migrationService_1 = require("../domain/migrationService");
+const logger_1 = require("../logger");
+const mappingUtils_1 = require("../domain/mappingUtils");
+/**
+ * Router for device entity mapping endpoints.
+ * These endpoints manage the device-level entity mappings (the new preferred approach).
+ */
+const createDeviceMappingsRouter = (deps) => {
+    const router = (0, express_1.Router)();
+    const readTransport = deps?.readTransport;
+    const profileLoader = deps?.profileLoader;
+    /**
+     * GET /api/device-mappings
+     * List all device mappings.
+     */
+    router.get('/', (_req, res) => {
+        try {
+            const mappings = deviceMappingStorage_1.deviceMappingStorage.listMappings();
+            return res.json({ mappings });
+        }
+        catch (error) {
+            logger_1.logger.error({ error }, 'Failed to list device mappings');
+            return res.status(500).json({ message: 'Failed to list device mappings' });
+        }
+    });
+    /**
+     * GET /api/device-mappings/services
+     * List all services, optionally filtered by domain and/or pattern.
+     * Query params:
+     *   - domain: filter by service domain (e.g., "esphome", "light", "switch"). Defaults to "esphome".
+     *   - pattern: glob pattern to filter service names (e.g., "*_get_build_flags")
+     * NOTE: This route MUST be defined before /:deviceId routes to avoid being matched as a deviceId
+     */
+    router.get('/services', async (req, res) => {
+        const { domain = 'esphome', pattern } = req.query;
+        if (!readTransport || typeof readTransport.getServicesByDomain !== 'function') {
+            return res.status(501).json({
+                message: 'Service listing requires WebSocket transport',
+                services: [],
+            });
+        }
+        try {
+            const domainStr = typeof domain === 'string' ? domain : 'esphome';
+            let services = await readTransport.getServicesByDomain(domainStr);
+            // Filter by pattern if provided (e.g., "*_get_build_flags")
+            if (pattern && typeof pattern === 'string') {
+                const regex = new RegExp('^' + pattern.replace(/\*/g, '.*').replace(/\?/g, '.') + '$', 'i');
+                services = services.filter((s) => regex.test(s));
+            }
+            return res.json({ services, domain: domainStr });
+        }
+        catch (error) {
+            logger_1.logger.error({ error, domain }, 'Failed to list services');
+            return res.status(500).json({ message: 'Failed to list services', services: [] });
+        }
+    });
+    /**
+     * GET /api/device-mappings/:deviceId
+     * Get a specific device's entity mappings.
+     */
+    router.get('/:deviceId', (req, res) => {
+        const { deviceId } = req.params;
+        try {
+            const mapping = deviceMappingStorage_1.deviceMappingStorage.getMapping(deviceId);
+            if (!mapping) {
+                return res.status(404).json({
+                    message: 'Device mapping not found',
+                    code: 'MAPPING_NOT_FOUND',
+                });
+            }
+            return res.json({ mapping });
+        }
+        catch (error) {
+            logger_1.logger.error({ error, deviceId }, 'Failed to get device mapping');
+            return res.status(500).json({ message: 'Failed to get device mapping' });
+        }
+    });
+    /**
+     * PUT /api/device-mappings/:deviceId
+     * Update a device's entity mappings.
+     * Used for manual corrections or re-discovery results.
+     */
+    router.put('/:deviceId', async (req, res) => {
+        const { deviceId } = req.params;
+        const mappingData = req.body;
+        if (!mappingData) {
+            return res.status(400).json({ message: 'Request body is required' });
+        }
+        try {
+            // Get existing mapping if it exists
+            const existing = deviceMappingStorage_1.deviceMappingStorage.getMapping(deviceId);
+            // Normalize mappings to ensure key compatibility across callers
+            const normalizedMappings = (0, mappingUtils_1.normalizeMappingKeys)(mappingData.mappings ?? existing?.mappings ?? {});
+            if (existing?.mappings) {
+                for (const [key, value] of Object.entries(normalizedMappings)) {
+                    const previous = existing.mappings[key];
+                    if (previous && previous !== value) {
+                        logger_1.logger.info({ deviceId, key, from: previous, to: value }, 'Mapping overwrite attempt');
+                    }
+                }
+            }
+            // Fetch entity units if readTransport is available and mappings are provided
+            let entityUnits = mappingData.entityUnits ?? existing?.entityUnits ?? {};
+            let entityOriginalObjectIds = mappingData.entityOriginalObjectIds ?? existing?.entityOriginalObjectIds ?? {};
+            let entityUniqueIds = mappingData.entityUniqueIds ?? existing?.entityUniqueIds ?? {};
+            // If we have new mappings and readTransport is available, fetch/refresh units
+            // Always refetch during resync to capture any newly added keys
+            if (mappingData.mappings && readTransport) {
+                const freshUnits = await fetchEntityUnits(normalizedMappings, readTransport);
+                const freshOriginals = await fetchEntityOriginalObjectIds(normalizedMappings, readTransport);
+                const freshUniqueIds = await fetchEntityUniqueIds(normalizedMappings, readTransport);
+                // Merge fresh units with existing, preferring fresh values
+                entityUnits = { ...entityUnits, ...freshUnits };
+                entityOriginalObjectIds = { ...entityOriginalObjectIds, ...freshOriginals };
+                entityUniqueIds = { ...entityUniqueIds, ...freshUniqueIds };
+            }
+            // Fetch firmware version if not provided and not already stored
+            let firmwareVersion = mappingData.firmwareVersion ?? existing?.firmwareVersion;
+            let esphomeVersion = mappingData.esphomeVersion ?? existing?.esphomeVersion;
+            let rawSwVersion = mappingData.rawSwVersion ?? existing?.rawSwVersion;
+            let esphomeNodeName = mappingData.esphomeNodeName ?? existing?.esphomeNodeName;
+            // If we don't have firmware info yet and readTransport is available, fetch it
+            if ((!firmwareVersion && !rawSwVersion && readTransport) || (!esphomeNodeName && readTransport)) {
+                try {
+                    const devices = await readTransport.listDevices();
+                    const device = devices.find(d => d.id === deviceId);
+                    if (device?.sw_version) {
+                        rawSwVersion = device.sw_version;
+                        const parsed = (0, deviceMappingStorage_1.parseFirmwareVersion)(device.sw_version);
+                        firmwareVersion = parsed.firmwareVersion;
+                        esphomeVersion = parsed.esphomeVersion;
+                        logger_1.logger.debug({ deviceId, rawSwVersion, firmwareVersion, esphomeVersion }, 'Fetched firmware version during PUT');
+                    }
+                    if (device && !esphomeNodeName) {
+                        esphomeNodeName = extractEsphomeNodeName(device);
+                    }
+                }
+                catch (err) {
+                    logger_1.logger.warn({ err, deviceId }, 'Failed to fetch device firmware version during PUT, continuing without it');
+                }
+            }
+            // Get current profile schema version for resync detection
+            const profileId = mappingData.profileId ?? existing?.profileId;
+            let profileSchemaVersion = mappingData.profileSchemaVersion ?? existing?.profileSchemaVersion;
+            if (profileId && profileLoader) {
+                const profile = profileLoader.getProfileById(profileId);
+                if (profile?.schemaVersion) {
+                    profileSchemaVersion = profile.schemaVersion;
+                }
+            }
+            // Preserve service mappings if user has confirmed them (don't overwrite during re-sync)
+            let serviceMappings = existing?.serviceMappings;
+            let serviceConfirmedByUser = existing?.serviceConfirmedByUser ?? false;
+            // Only update service mappings if explicitly provided AND not user-confirmed
+            if (mappingData.serviceMappings !== undefined) {
+                if (!existing?.serviceConfirmedByUser) {
+                    serviceMappings = mappingData.serviceMappings;
+                    serviceConfirmedByUser = mappingData.serviceConfirmedByUser ?? false;
+                }
+                else {
+                    logger_1.logger.debug({ deviceId }, 'Skipping service mapping update - user has confirmed existing mappings');
+                }
+            }
+            // Auto-discover service mappings if not user-confirmed and missing services
+            // Note: Primary service discovery happens in entityDiscovery.discoverAndSave
+            // This is a fallback for PUT requests that don't go through that path
+            if (readTransport && !serviceConfirmedByUser) {
+                let buildFlagsService;
+                let updateManifestService;
+                // Method 1: Try getServicesForTarget
+                try {
+                    const services = await readTransport.getServicesForTarget({ device_id: [deviceId] });
+                    buildFlagsService = services.find((s) => s.endsWith('_get_build_flags'));
+                    updateManifestService = services.find((s) => s.endsWith('_set_update_manifest'));
+                }
+                catch (err) {
+                    logger_1.logger.debug({ err, deviceId }, 'getServicesForTarget failed in PUT handler');
+                }
+                // Method 2: Construct from esphomeNodeName
+                if ((!(buildFlagsService && updateManifestService)) && esphomeNodeName) {
+                    try {
+                        const expectedBuildFlags = `esphome.${esphomeNodeName}_get_build_flags`;
+                        const expectedUpdateManifest = `esphome.${esphomeNodeName}_set_update_manifest`;
+                        const allEsphomeServices = await readTransport.getServicesByDomain('esphome');
+                        if (!buildFlagsService && allEsphomeServices.includes(expectedBuildFlags)) {
+                            buildFlagsService = expectedBuildFlags;
+                        }
+                        if (!updateManifestService && allEsphomeServices.includes(expectedUpdateManifest)) {
+                            updateManifestService = expectedUpdateManifest;
+                        }
+                    }
+                    catch (err) {
+                        logger_1.logger.debug({ err, deviceId }, 'getServicesByDomain failed in PUT handler');
+                    }
+                }
+                if (buildFlagsService || updateManifestService) {
+                    serviceMappings = {
+                        ...serviceMappings,
+                        ...(buildFlagsService ? { getBuildFlags: buildFlagsService } : {}),
+                        ...(updateManifestService ? { setUpdateManifest: updateManifestService } : {}),
+                    };
+                    logger_1.logger.info({
+                        deviceId,
+                        buildFlagsService,
+                        updateManifestService,
+                    }, 'Auto-discovered services in PUT handler');
+                }
+            }
+            // Build the mapping object
+            const mapping = {
+                deviceId,
+                profileId: mappingData.profileId ?? existing?.profileId ?? 'unknown',
+                deviceName: mappingData.deviceName ?? existing?.deviceName ?? 'Unknown Device',
+                esphomeNodeName,
+                discoveredAt: existing?.discoveredAt ?? new Date().toISOString(),
+                lastUpdated: new Date().toISOString(),
+                confirmedByUser: mappingData.confirmedByUser ?? existing?.confirmedByUser ?? true,
+                autoMatchedCount: mappingData.autoMatchedCount ?? existing?.autoMatchedCount ?? 0,
+                manuallyMappedCount: mappingData.manuallyMappedCount ?? existing?.manuallyMappedCount ?? 0,
+                mappings: normalizedMappings,
+                unmappedEntities: mappingData.unmappedEntities ?? existing?.unmappedEntities ?? [],
+                entityOriginalObjectIds,
+                entityUniqueIds,
+                entityUnits,
+                firmwareVersion,
+                esphomeVersion,
+                rawSwVersion,
+                profileSchemaVersion,
+                serviceMappings,
+                serviceConfirmedByUser,
+            };
+            await deviceMappingStorage_1.deviceMappingStorage.saveMapping(mapping);
+            logger_1.logger.info({ deviceId, mappingCount: Object.keys(mapping.mappings).length, entityUnits }, 'Device mapping updated');
+            return res.json({ mapping });
+        }
+        catch (error) {
+            logger_1.logger.error({ error, deviceId }, 'Failed to update device mapping');
+            return res.status(500).json({ message: 'Failed to update device mapping' });
+        }
+    });
+    /**
+     * DELETE /api/device-mappings/:deviceId
+     * Delete a device's entity mappings.
+     */
+    router.delete('/:deviceId', (req, res) => {
+        const { deviceId } = req.params;
+        try {
+            const deleted = deviceMappingStorage_1.deviceMappingStorage.deleteMapping(deviceId);
+            if (!deleted) {
+                return res.status(404).json({ message: 'Device mapping not found' });
+            }
+            logger_1.logger.info({ deviceId }, 'Device mapping deleted');
+            return res.json({ deleted: true });
+        }
+        catch (error) {
+            logger_1.logger.error({ error, deviceId }, 'Failed to delete device mapping');
+            return res.status(500).json({ message: 'Failed to delete device mapping' });
+        }
+    });
+    /**
+     * GET /api/device-mappings/:deviceId/entities
+     * Get entities for a device, optionally filtered by category.
+     */
+    router.get('/:deviceId/entities', (req, res) => {
+        const { deviceId } = req.params;
+        const { category } = req.query;
+        try {
+            if (!deviceMappingStorage_1.deviceMappingStorage.hasMapping(deviceId)) {
+                return res.status(404).json({
+                    message: 'Device mapping not found',
+                    code: 'MAPPING_NOT_FOUND',
+                });
+            }
+            if (category && ['sensor', 'setting', 'zone', 'tracking'].includes(category)) {
+                const entities = deviceEntityService_1.deviceEntityService.getEntitiesByCategory(deviceId, category);
+                return res.json({ entities, category });
+            }
+            // Return all mapped entities
+            const mapping = deviceMappingStorage_1.deviceMappingStorage.getMapping(deviceId);
+            return res.json({ entities: mapping?.mappings ?? {} });
+        }
+        catch (error) {
+            logger_1.logger.error({ error, deviceId, category }, 'Failed to get device entities');
+            return res.status(500).json({ message: 'Failed to get device entities' });
+        }
+    });
+    /**
+     * GET /api/device-mappings/:deviceId/settings
+     * Get settings entities grouped for UI display.
+     */
+    router.get('/:deviceId/settings', async (req, res) => {
+        const { deviceId } = req.params;
+        try {
+            if (!deviceMappingStorage_1.deviceMappingStorage.hasMapping(deviceId)) {
+                return res.status(404).json({
+                    message: 'Device mapping not found',
+                    code: 'MAPPING_NOT_FOUND',
+                });
+            }
+            const groups = deviceEntityService_1.deviceEntityService.getSettingsGrouped(deviceId);
+            if (!readTransport || groups.length === 0) {
+                return res.json({ groups });
+            }
+            const entityIds = groups.flatMap((group) => group.settings.map((setting) => setting.entityId));
+            const uniqueEntityIds = Array.from(new Set(entityIds));
+            let registryById = new Map();
+            try {
+                const registry = await readTransport.listEntityRegistry();
+                registryById = new Map(registry.map((entry) => [entry.entity_id, { disabled_by: entry.disabled_by ?? null, hidden_by: entry.hidden_by ?? null }]));
+            }
+            catch (error) {
+                logger_1.logger.warn({ error }, 'Failed to load entity registry for settings availability');
+            }
+            let statesById = new Map();
+            if (uniqueEntityIds.length > 0) {
+                try {
+                    const states = await readTransport.getStates(uniqueEntityIds);
+                    statesById = states;
+                }
+                catch (error) {
+                    logger_1.logger.warn({ error }, 'Failed to load entity states for settings availability');
+                }
+            }
+            const normalizeStateValue = (state) => (typeof state === 'string' ? state.toLowerCase() : '');
+            const isUnavailableState = (state) => {
+                const normalized = normalizeStateValue(state);
+                return normalized === 'unavailable' || normalized === 'unknown';
+            };
+            const enrichedGroups = groups.map((group) => ({
+                ...group,
+                settings: group.settings.map((setting) => {
+                    const registryEntry = registryById.get(setting.entityId);
+                    const disabledBy = registryEntry?.disabled_by ?? null;
+                    const hiddenBy = registryEntry?.hidden_by ?? null;
+                    const state = statesById.get(setting.entityId);
+                    let status = 'unknown';
+                    if (disabledBy) {
+                        status = 'disabled';
+                    }
+                    else if (state) {
+                        if (isUnavailableState(state.state)) {
+                            status = 'unavailable';
+                        }
+                        else {
+                            status = 'enabled';
+                        }
+                    }
+                    return {
+                        ...setting,
+                        disabledBy,
+                        hiddenBy,
+                        status,
+                    };
+                }),
+            }));
+            return res.json({ groups: enrichedGroups });
+        }
+        catch (error) {
+            logger_1.logger.error({ error, deviceId }, 'Failed to get device settings');
+            return res.status(500).json({ message: 'Failed to get device settings' });
+        }
+    });
+    /**
+     * GET /api/device-mappings/:deviceId/entity/:entityKey
+     * Get a specific entity ID by key.
+     */
+    router.get('/:deviceId/entity/:entityKey', (req, res) => {
+        const { deviceId, entityKey } = req.params;
+        try {
+            const entityId = deviceEntityService_1.deviceEntityService.getEntityId(deviceId, entityKey);
+            if (!entityId) {
+                return res.status(404).json({
+                    message: 'Entity not found',
+                    code: 'ENTITY_NOT_FOUND',
+                    deviceId,
+                    entityKey,
+                });
+            }
+            return res.json({ entityId, entityKey });
+        }
+        catch (error) {
+            logger_1.logger.error({ error, deviceId, entityKey }, 'Failed to get entity');
+            return res.status(500).json({ message: 'Failed to get entity' });
+        }
+    });
+    /**
+     * GET /api/device-mappings/:deviceId/validation
+     * Check if a device has valid mappings and what's missing.
+     */
+    router.get('/:deviceId/validation', (req, res) => {
+        const { deviceId } = req.params;
+        try {
+            const hasValid = deviceEntityService_1.deviceEntityService.hasValidMappings(deviceId);
+            const missing = deviceEntityService_1.deviceEntityService.getMissingEntities(deviceId);
+            const mapping = deviceMappingStorage_1.deviceMappingStorage.getMapping(deviceId);
+            return res.json({
+                hasMapping: !!mapping,
+                hasValidMappings: hasValid,
+                missingEntities: missing,
+                mappedCount: mapping ? Object.keys(mapping.mappings).length : 0,
+                confirmedByUser: mapping?.confirmedByUser ?? false,
+            });
+        }
+        catch (error) {
+            logger_1.logger.error({ error, deviceId }, 'Failed to validate device mapping');
+            return res.status(500).json({ message: 'Failed to validate device mapping' });
+        }
+    });
+    /**
+     * GET /api/device-mappings/:deviceId/zone-labels
+     * Get zone labels for a device.
+     */
+    router.get('/:deviceId/zone-labels', (req, res) => {
+        const { deviceId } = req.params;
+        try {
+            const mapping = deviceMappingStorage_1.deviceMappingStorage.getMapping(deviceId);
+            if (!mapping) {
+                return res.status(404).json({
+                    message: 'Device mapping not found',
+                    code: 'MAPPING_NOT_FOUND',
+                });
+            }
+            return res.json({ zoneLabels: mapping.zoneLabels ?? {} });
+        }
+        catch (error) {
+            logger_1.logger.error({ error, deviceId }, 'Failed to get zone labels');
+            return res.status(500).json({ message: 'Failed to get zone labels' });
+        }
+    });
+    /**
+     * PUT /api/device-mappings/:deviceId/zone-labels
+     * Update zone labels for a device.
+     * Body: { zoneLabels: { "Zone 1": "Bed", "Zone 2": "Desk" } }
+     */
+    router.put('/:deviceId/zone-labels', async (req, res) => {
+        const { deviceId } = req.params;
+        const { zoneLabels } = req.body;
+        if (!zoneLabels || typeof zoneLabels !== 'object') {
+            return res.status(400).json({ message: 'zoneLabels object is required' });
+        }
+        try {
+            const existing = deviceMappingStorage_1.deviceMappingStorage.getMapping(deviceId);
+            if (!existing) {
+                return res.status(404).json({
+                    message: 'Device mapping not found. Device must be synced before adding zone labels.',
+                    code: 'MAPPING_NOT_FOUND',
+                });
+            }
+            // Clean up labels - remove empty strings and trim values
+            const cleanedLabels = {};
+            for (const [zoneId, label] of Object.entries(zoneLabels)) {
+                const trimmed = typeof label === 'string' ? label.trim() : '';
+                if (trimmed) {
+                    cleanedLabels[zoneId] = trimmed;
+                }
+            }
+            // Update only the zoneLabels field
+            const updated = {
+                ...existing,
+                zoneLabels: cleanedLabels,
+                lastUpdated: new Date().toISOString(),
+            };
+            await deviceMappingStorage_1.deviceMappingStorage.saveMapping(updated);
+            logger_1.logger.info({ deviceId, labelCount: Object.keys(cleanedLabels).length }, 'Zone labels updated');
+            return res.json({ zoneLabels: cleanedLabels });
+        }
+        catch (error) {
+            logger_1.logger.error({ error, deviceId }, 'Failed to update zone labels');
+            return res.status(500).json({ message: 'Failed to update zone labels' });
+        }
+    });
+    /**
+     * POST /api/device-mappings/migrate
+     * Trigger migration of all room entity mappings to device-level storage.
+     */
+    router.post('/migrate', async (_req, res) => {
+        try {
+            const summary = await migrationService_1.migrationService.migrateAllOnStartup();
+            return res.json({ summary });
+        }
+        catch (error) {
+            logger_1.logger.error({ error }, 'Failed to run migration');
+            return res.status(500).json({ message: 'Failed to run migration' });
+        }
+    });
+    /**
+     * GET /api/device-mappings/migrate/dry-run
+     * Preview what would be migrated without actually doing it.
+     */
+    router.get('/migrate/dry-run', async (_req, res) => {
+        try {
+            const summary = await migrationService_1.migrationService.dryRunMigration();
+            return res.json({ summary });
+        }
+        catch (error) {
+            logger_1.logger.error({ error }, 'Failed to run migration dry-run');
+            return res.status(500).json({ message: 'Failed to run migration dry-run' });
+        }
+    });
+    /**
+     * PUT /api/device-mappings/:deviceId/service-mappings
+     * Update service mappings for a device.
+     * Body: { serviceMappings: Record<string, string>, confirmed?: boolean }
+     */
+    router.put('/:deviceId/service-mappings', async (req, res) => {
+        const { deviceId } = req.params;
+        const { serviceMappings, confirmed } = req.body;
+        try {
+            const existing = deviceMappingStorage_1.deviceMappingStorage.getMapping(deviceId);
+            if (!existing) {
+                return res.status(404).json({ message: 'Device mapping not found' });
+            }
+            const updated = {
+                ...existing,
+                serviceMappings: serviceMappings ?? existing.serviceMappings,
+                serviceConfirmedByUser: confirmed ?? existing.serviceConfirmedByUser ?? false,
+                lastUpdated: new Date().toISOString(),
+            };
+            await deviceMappingStorage_1.deviceMappingStorage.saveMapping(updated);
+            logger_1.logger.info({ deviceId, serviceMappings, confirmed }, 'Service mappings updated');
+            return res.json({ mapping: updated });
+        }
+        catch (error) {
+            logger_1.logger.error({ error, deviceId }, 'Failed to update service mappings');
+            return res.status(500).json({ message: 'Failed to update service mappings' });
+        }
+    });
+    return router;
+};
+exports.createDeviceMappingsRouter = createDeviceMappingsRouter;
+/**
+ * Fetch unit_of_measurement from Home Assistant for all mapped entities.
+ * This captures units for any entity that has one (sensors, number inputs, etc.)
+ * to support imperial/metric display throughout the UI.
+ */
+async function fetchEntityUnits(flatMappings, readTransport) {
+    const entityUnits = {};
+    // Build list of all unique entity IDs to fetch
+    const entityIdsToFetch = [];
+    const seenEntityIds = new Set();
+    for (const [key, entityId] of Object.entries(flatMappings)) {
+        if (entityId && !seenEntityIds.has(entityId)) {
+            entityIdsToFetch.push({ key, entityId });
+            seenEntityIds.add(entityId);
+        }
+    }
+    if (entityIdsToFetch.length === 0) {
+        return entityUnits;
+    }
+    try {
+        // Batch fetch all entity states
+        const states = await readTransport.getStates(entityIdsToFetch.map(e => e.entityId));
+        for (const { key, entityId } of entityIdsToFetch) {
+            const state = states.get(entityId);
+            if (state?.attributes?.unit_of_measurement) {
+                const unit = state.attributes.unit_of_measurement;
+                entityUnits[key] = unit;
+                logger_1.logger.debug({ key, entityId, unit }, 'Captured entity unit of measurement');
+            }
+        }
+        logger_1.logger.info({ count: Object.keys(entityUnits).length, total: entityIdsToFetch.length }, 'Fetched entity units');
+    }
+    catch (err) {
+        logger_1.logger.warn({ err }, 'Failed to fetch entity units - proceeding without unit metadata');
+    }
+    return entityUnits;
+}
+async function fetchEntityOriginalObjectIds(flatMappings, readTransport) {
+    const originalObjectIds = {};
+    const entityIds = Array.from(new Set(Object.values(flatMappings).filter(Boolean)));
+    if (entityIds.length === 0) {
+        return originalObjectIds;
+    }
+    try {
+        const registry = await readTransport.listEntityRegistry();
+        const registryById = new Map(registry.map((entry) => [entry.entity_id, entry]));
+        for (const entityId of entityIds) {
+            const entry = registryById.get(entityId);
+            const originalObjectId = entry?.original_object_id;
+            if (originalObjectId) {
+                originalObjectIds[entityId] = originalObjectId;
+            }
+        }
+        logger_1.logger.info({ count: Object.keys(originalObjectIds).length, total: entityIds.length }, 'Fetched entity original object ids');
+    }
+    catch (err) {
+        logger_1.logger.warn({ err }, 'Failed to fetch entity original object ids - proceeding without metadata');
+    }
+    return originalObjectIds;
+}
+async function fetchEntityUniqueIds(flatMappings, readTransport) {
+    const uniqueIds = {};
+    const entityIds = Array.from(new Set(Object.values(flatMappings).filter(Boolean)));
+    if (entityIds.length === 0) {
+        return uniqueIds;
+    }
+    try {
+        const registry = await readTransport.listEntityRegistry();
+        const registryById = new Map(registry.map((entry) => [entry.entity_id, entry]));
+        for (const entityId of entityIds) {
+            const entry = registryById.get(entityId);
+            const uniqueId = entry?.unique_id;
+            if (uniqueId) {
+                uniqueIds[entityId] = uniqueId;
+            }
+        }
+        logger_1.logger.info({ count: Object.keys(uniqueIds).length, total: entityIds.length }, 'Fetched entity unique ids');
+    }
+    catch (err) {
+        logger_1.logger.warn({ err }, 'Failed to fetch entity unique ids - proceeding without metadata');
+    }
+    return uniqueIds;
+}
+function extractEsphomeNodeName(device) {
+    for (const [domain, identifier] of device.identifiers ?? []) {
+        if (typeof domain === 'string' && typeof identifier === 'string' && domain.toLowerCase() === 'esphome') {
+            return identifier;
+        }
+    }
+    return slugifyDeviceName(device.name);
+}
+function slugifyDeviceName(name) {
+    if (!name)
+        return undefined;
+    const slug = name
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '_')
+        .replace(/^_+|_+$/g, '');
+    return slug || undefined;
+}

@@ -16,6 +16,8 @@ import { createHeatmapRouter } from './routes/heatmap';
 import { createDeviceMappingsRouter } from './routes/deviceMappings';
 import { createFirmwareRouter } from './routes/firmware';
 import { createZoneBackupsRouter } from './routes/zoneBackups';
+import { createFloorsRouter } from './routes/floors';
+import { createImportRouter } from './routes/import';
 import type { IHaReadTransport } from './ha/readTransport';
 import type { IHaWriteClient } from './ha/writeClient';
 import type { DeviceProfileLoader } from './domain/deviceProfiles';
@@ -50,6 +52,7 @@ export const createServer = (config: AppConfig, deps?: ServerDependencies): expr
 
   app.use('/api/meta', createMetaRouter(config, deps?.transportStatus));
   app.use('/api/rooms', createRoomsRouter());
+  app.use('/api/floors', createFloorsRouter());
   app.use('/api/zones', createZonesRouter());
   app.use('/api/settings', createSettingsRouter());
   app.use('/api/custom-assets', createCustomAssetsRouter());
@@ -69,6 +72,7 @@ export const createServer = (config: AppConfig, deps?: ServerDependencies): expr
       writeClient: deps.writeClient,
       profileLoader: deps.profileLoader,
     };
+    app.use('/api/import', createImportRouter({ readTransport: deps.readTransport }));
     app.use('/api/devices', createDevicesRouter(devicesDeps));
     app.use('/api/devices', createEntityDiscoveryRouter({
       readTransport: deps.readTransport,

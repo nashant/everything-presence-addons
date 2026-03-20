@@ -14,6 +14,17 @@ export interface AreaRegistryEntry {
 }
 
 /**
+ * Floor registry entry from Home Assistant
+ */
+export interface FloorRegistryEntry {
+  floor_id: string;
+  name: string;
+  level: number;
+  icon: string | null;
+  aliases: string[];
+}
+
+/**
  * Entity state as returned by Home Assistant
  */
 export interface EntityState {
@@ -94,6 +105,11 @@ export interface IHaReadTransport {
    * List all areas from the area registry
    */
   listAreaRegistry(): Promise<AreaRegistryEntry[]>;
+
+  /**
+   * List all floors from the floor registry
+   */
+  listFloorRegistry(): Promise<FloorRegistryEntry[]>;
 
   /**
    * List services applicable to a target (WebSocket only in HA).
