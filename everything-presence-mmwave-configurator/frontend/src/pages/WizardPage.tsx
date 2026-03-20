@@ -337,31 +337,25 @@ export const WizardPage: React.FC<WizardPageProps> = ({
     loadFeatureAvailability();
   }, [selectedRoom?.deviceId, selectedRoom?.profileId, selectedRoom?.entityNamePrefix, selectedRoom?.entityMappings, deviceId, profileId, devices, deviceHasValidMappings]);
 
-  // Dynamic steps based on room path
+  // Dynamic steps based on context
+  // When adding a device to an existing room (existingRoomId), the wizard is
+  // device-focused: pick device → discover entities → configure zones → done.
+  // Room setup (walls, doors, furniture, placement) happens in the Room Builder.
   const steps: StepKey[] = useMemo(() => {
-    const base: StepKey[] = ['device', 'entityDiscovery', 'roomChoice'];
-
-    // Check if current profile supports zones
     const supportsZones = currentProfile?.capabilities?.zones !== false;
 
-    if (roomPath === 'skip') {
-      // Skip room setup: device → entityDiscovery → roomChoice → (zones if supported) → finish
-      return supportsZones ? [...base, 'zones', 'finish'] : [...base, 'finish'];
-    }
-
-    if (roomPath === 'existing') {
-      // Use existing room: device → entityDiscovery → roomChoice → roomDetails → placement → (zones if supported) → finish
+    if (existingRoomId) {
+      // Adding device to existing room: no room steps needed
       return supportsZones
-        ? [...base, 'roomDetails', 'placement', 'zones', 'finish']
-        : [...base, 'roomDetails', 'placement', 'finish'];
+        ? ['device', 'entityDiscovery', 'zones', 'finish']
+        : ['device', 'entityDiscovery', 'finish'];
     }
 
-    // New room (default): device → entityDiscovery → roomChoice → roomDetails → outline → placement → doors → furniture → (zones if supported) → finish
-    // Device placement after outline so room shape exists, but before doors/furniture so live tracking can help position them
+    // Standalone wizard (no room context) — minimal: device + entities + zones
     return supportsZones
-      ? [...base, 'roomDetails', 'outline', 'placement', 'doors', 'furniture', 'zones', 'finish']
-      : [...base, 'roomDetails', 'outline', 'placement', 'doors', 'furniture', 'finish'];
-  }, [roomPath, currentProfile]);
+      ? ['device', 'entityDiscovery', 'zones', 'finish']
+      : ['device', 'entityDiscovery', 'finish'];
+  }, [existingRoomId, currentProfile]);
 
   const [stepIndex, setStepIndex] = useState<number>(() => {
     // Initialize with default 'new' room path steps for initialStep lookup

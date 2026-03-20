@@ -13,12 +13,16 @@ import { getInstallationAngleSuggestion } from '../utils/rotationSuggestion';
 import { useDeviceMappings } from '../contexts/DeviceMappingsContext';
 import { EditorSidebar, type EditorSection, type SectionDef } from '../components/EditorSidebar';
 import { PopOutPanel } from '../components/PopOutPanel';
+import { EntityDiscovery } from '../components/EntityDiscovery';
+import { EntityMappings } from '../api/types';
 
 interface RoomBuilderPageProps {
   onBack?: () => void;
   onNavigate?: (view: 'wizard' | 'zoneEditor' | 'roomBuilder' | 'settings' | 'liveDashboard') => void;
   initialRoomId?: string | null;
   initialProfileId?: string | null;
+  /** Open the Devices panel automatically on mount (used by Dashboard "Add Device") */
+  openDevicesPanel?: boolean;
   onWizardProgress?: (progress: { outlineDone?: boolean; placementDone?: boolean }) => void;
   liveState?: LiveState | null;
   targetPositions?: Array<{
@@ -38,6 +42,7 @@ export const RoomBuilderPage: React.FC<RoomBuilderPageProps> = ({
   onNavigate,
   initialRoomId,
   initialProfileId,
+  openDevicesPanel,
   onWizardProgress,
   liveState,
   targetPositions,
@@ -70,7 +75,7 @@ export const RoomBuilderPage: React.FC<RoomBuilderPageProps> = ({
   const [displayUnits, setDisplayUnits] = useState<'metric' | 'imperial'>('metric');
   const [zoom, setZoom] = useState(1.1);
   const [isCanvasDragging, setIsCanvasDragging] = useState(false);
-  const [activeSection, setActiveSection] = useState<EditorSection | null>(null);
+  const [activeSection, setActiveSection] = useState<EditorSection | null>(openDevicesPanel ? 'devices' : null);
   // Display settings (persisted to localStorage)
   const {
     showWalls, setShowWalls,
@@ -786,6 +791,8 @@ export const RoomBuilderPage: React.FC<RoomBuilderPageProps> = ({
     }
   };
 
+  const [showSavedModal, setShowSavedModal] = useState(false);
+
   const handleSaveRoom = async () => {
     if (!selectedRoom) return;
     setSaving(true);
@@ -794,12 +801,7 @@ export const RoomBuilderPage: React.FC<RoomBuilderPageProps> = ({
       setRooms((prev) => prev.map((r) => (r.id === selectedRoom.id ? result.room : r)));
       onWizardProgress?.({ outlineDone: true, placementDone: true });
       setError(null);
-      // Navigate back to dashboard after successful save
-      if (onNavigate) {
-        onNavigate('liveDashboard');
-      } else if (onBack) {
-        onBack();
-      }
+      setShowSavedModal(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save room');
     } finally {
@@ -848,6 +850,27 @@ export const RoomBuilderPage: React.FC<RoomBuilderPageProps> = ({
   const isZeroSuggestion = rotationSuggestion?.suggestedAngle === 0;
 
   const hasDevice = !!selectedRoom?.deviceId;
+  // Device linking flow state: 'pick' = select device, 'discover' = entity discovery
+  const [deviceLinkStep, setDeviceLinkStep] = useState<'pick' | 'discover' | null>(null);
+  const [pendingDeviceId, setPendingDeviceId] = useState<string | null>(null);
+  const pendingDevice = useMemo(
+    () => pendingDeviceId ? devices.find((d) => d.id === pendingDeviceId) ?? null : null,
+    [devices, pendingDeviceId],
+  );
+  // Find profile matching pending device
+  const pendingProfile = useMemo(() => {
+    if (!pendingDevice) return null;
+    return profiles.find((p) => p.id === pendingDevice.profileId) ?? profiles[0] ?? null;
+  }, [pendingDevice, profiles]);
+  // Devices already linked to any room
+  const linkedDeviceIds = useMemo(
+    () => new Set(rooms.filter((r) => r.deviceId).map((r) => r.deviceId!)),
+    [rooms],
+  );
+  const availableDevices = useMemo(
+    () => devices.filter((d) => !linkedDeviceIds.has(d.id)),
+    [devices, linkedDeviceIds],
+  );
   const wallCount = selectedRoom?.roomShell?.points?.length ?? 0;
   const doorCount = selectedRoom?.doors?.length ?? 0;
   const furnitureCount = selectedRoom?.furniture?.length ?? 0;
@@ -1234,23 +1257,80 @@ export const RoomBuilderPage: React.FC<RoomBuilderPageProps> = ({
             <PopOutPanel
               title="Devices"
               subtitle={hasDevice ? (selectedDevice?.name || selectedDevice?.id || 'Device linked') : 'No device linked'}
-              onClose={() => setActiveSection(null)}
+              onClose={() => { setActiveSection(null); setDeviceLinkStep(null); setPendingDeviceId(null); }}
             >
-              {!hasDevice ? (
-                <div className="space-y-4">
-                  <div className="text-center py-4 text-slate-400 text-sm">
-                    No device is linked to this room.
-                  </div>
+              {/* — Entity discovery step — */}
+              {deviceLinkStep === 'discover' && pendingDevice && pendingProfile && selectedRoom ? (
+                <div className="space-y-3">
                   <button
-                    onClick={() => {
-                      if (onNavigate) onNavigate('wizard');
-                    }}
-                    className="w-full rounded-xl bg-gradient-to-r from-aqua-600 to-aqua-500 px-4 py-3 text-sm font-bold text-white shadow-lg shadow-aqua-500/30 transition-all hover:shadow-xl hover:shadow-aqua-500/40 active:scale-95"
+                    onClick={() => { setDeviceLinkStep('pick'); setPendingDeviceId(null); }}
+                    className="text-xs text-slate-400 hover:text-slate-200 transition-colors"
                   >
-                    + Add Device
+                    ← Back to device list
                   </button>
+                  <EntityDiscovery
+                    deviceId={pendingDevice.id}
+                    profileId={pendingProfile.id}
+                    deviceName={pendingDevice.name || pendingDevice.id}
+                    onComplete={(mappings: EntityMappings) => {
+                      // Link device to room
+                      const nextRoom: RoomConfig = {
+                        ...selectedRoom,
+                        deviceId: pendingDevice.id,
+                        profileId: pendingProfile.id,
+                        entityMappings: mappings,
+                        entityNamePrefix: pendingDevice.entityNamePrefix,
+                        devicePlacement: selectedRoom.devicePlacement ?? { x: 0, y: 0, rotationDeg: 0 },
+                      };
+                      setRooms((prev) => prev.map((r) => (r.id === selectedRoom.id ? nextRoom : r)));
+                      setSelectedProfileId(pendingProfile.id);
+                      setDeviceLinkStep(null);
+                      setPendingDeviceId(null);
+                    }}
+                    onCancel={() => { setDeviceLinkStep('pick'); setPendingDeviceId(null); }}
+                  />
                 </div>
-              ) : (
+
+              ) : !hasDevice && deviceLinkStep !== 'discover' ? (
+                /* — Device picker — */
+                <div className="space-y-3">
+                  {availableDevices.length === 0 ? (
+                    <div className="text-center py-6 text-slate-400 text-sm">
+                      <div className="text-2xl mb-2">📡</div>
+                      No available devices found.
+                      <br />
+                      <span className="text-xs text-slate-500">Make sure your EP device is connected and discovered by Home Assistant.</span>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="text-xs text-slate-400">Select a device to link to this room:</div>
+                      {availableDevices.map((d) => {
+                        const profile = profiles.find((p) => p.id === d.profileId);
+                        return (
+                          <button
+                            key={d.id}
+                            onClick={() => {
+                              setPendingDeviceId(d.id);
+                              setDeviceLinkStep('discover');
+                            }}
+                            className="w-full rounded-lg border border-slate-700 bg-slate-800/50 p-3 text-left transition-all hover:border-aqua-500/50 hover:bg-slate-800 active:scale-[0.98]"
+                          >
+                            <div className="font-semibold text-sm text-slate-100">{d.name || d.id}</div>
+                            {profile && (
+                              <div className="text-xs text-slate-400 mt-0.5">{profile.name}</div>
+                            )}
+                            {d.entityNamePrefix && (
+                              <div className="text-[10px] text-slate-500 mt-0.5 font-mono">{d.entityNamePrefix}</div>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </>
+                  )}
+                </div>
+
+              ) : hasDevice ? (
+                /* — Device linked: show placement controls — */
                 <div className="space-y-4">
                   <div className="rounded-lg border border-emerald-600/30 bg-emerald-600/10 px-3 py-2 text-sm text-emerald-200">
                     {selectedDevice?.name || selectedDevice?.id || 'Device linked'}
@@ -1344,8 +1424,25 @@ export const RoomBuilderPage: React.FC<RoomBuilderPageProps> = ({
                       </button>
                     </div>
                   </div>
+                  {/* Unlink device */}
+                  <button
+                    onClick={() => {
+                      if (!selectedRoom) return;
+                      const nextRoom: RoomConfig = {
+                        ...selectedRoom,
+                        deviceId: undefined,
+                        profileId: undefined,
+                        entityMappings: undefined,
+                        entityNamePrefix: undefined,
+                      };
+                      setRooms((prev) => prev.map((r) => (r.id === selectedRoom.id ? nextRoom : r)));
+                    }}
+                    className="w-full rounded-lg border border-red-600/30 bg-red-600/10 px-3 py-2 text-xs font-semibold text-red-300 transition-all hover:bg-red-600/20 active:scale-95"
+                  >
+                    Unlink Device
+                  </button>
                 </div>
-              )}
+              ) : null}
             </PopOutPanel>
           )}
 
@@ -1881,6 +1978,24 @@ export const RoomBuilderPage: React.FC<RoomBuilderPageProps> = ({
           onSelect={handleAddFurniture}
           onClose={() => setShowFurnitureLibrary(false)}
         />
+      )}
+
+      {/* Save confirmation modal */}
+      {showSavedModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowSavedModal(false)} />
+          <div className="relative z-10 w-full max-w-sm mx-4 rounded-2xl border border-slate-700/50 bg-slate-900/95 backdrop-blur shadow-2xl animate-in zoom-in-95 fade-in duration-200 p-6 text-center">
+            <div className="text-4xl mb-3">✅</div>
+            <h3 className="text-lg font-bold text-white mb-1">Room Saved</h3>
+            <p className="text-sm text-slate-400 mb-5">Your changes have been saved successfully.</p>
+            <button
+              onClick={() => setShowSavedModal(false)}
+              className="rounded-xl border border-aqua-600/50 bg-aqua-600/20 px-6 py-2.5 font-semibold text-aqua-100 shadow-lg transition-all hover:bg-aqua-600/30 active:scale-95"
+            >
+              OK
+            </button>
+          </div>
+        </div>
       )}
     </div>
   );

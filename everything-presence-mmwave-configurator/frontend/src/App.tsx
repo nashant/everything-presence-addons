@@ -505,13 +505,11 @@ function App() {
   // Track which room we're adding a device to (null = normal wizard mode)
   const [addDeviceRoomId, setAddDeviceRoomId] = useState<string | null>(null);
 
-  // "Add Device" handler: navigate to wizard with the room pre-selected
+  // "Add Device" handler: navigate to room builder with Devices panel open
   const handleAddDevice = (roomId: string) => {
     setSelectedRoomId(roomId);
     setAddDeviceRoomId(roomId);
-    setWizardStep('device');
-    updateSettings({ wizardStep: 'device' }).catch(() => null);
-    setView('wizard');
+    setView('roomBuilder');
   };
 
   return (
@@ -624,16 +622,14 @@ function App() {
         {view === 'roomBuilder' && (
           <RoomBuilderPage
             onNavigate={(targetView) => {
-              if (targetView === 'wizard') {
-                setWizardStep('device');
-                updateSettings({ wizardStep: 'device' }).catch(() => null);
-              }
               // Map 'liveDashboard' to 'dashboard' for the main live tracking view
               const mappedView = targetView === 'liveDashboard' ? 'dashboard' : targetView;
+              setAddDeviceRoomId(null);
               setView(mappedView);
             }}
             initialRoomId={selectedRoomId}
             initialProfileId={selectedProfileId}
+            openDevicesPanel={!!addDeviceRoomId}
             onWizardProgress={(p) => {
               if (p.outlineDone) {
                 setWizardOutlineDone(true);
