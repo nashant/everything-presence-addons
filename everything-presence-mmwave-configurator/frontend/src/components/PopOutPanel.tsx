@@ -29,9 +29,12 @@ export const PopOutPanel: React.FC<PopOutPanelProps> = ({
           <h3 className="text-lg font-bold text-white">{title}</h3>
           <button
             onClick={onClose}
-            className="rounded-lg border border-slate-700 bg-slate-800/50 px-3 py-1.5 text-sm text-slate-200 transition-colors hover:border-slate-600 hover:bg-slate-700"
+            className="text-slate-400 hover:text-white transition-colors"
+            aria-label="Close"
           >
-            ✕ Close
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
           </button>
         </div>
         {subtitle && (
