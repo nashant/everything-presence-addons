@@ -49,8 +49,13 @@ log() {
 log "Waiting for Home Assistant at ${HA_URL}..."
 elapsed=0
 while [ "$elapsed" -lt "$MAX_WAIT" ]; do
+  # Check if HA is reachable (either onboarding API or root page)
   if curl -sf "${HA_URL}/api/onboarding" > /dev/null 2>&1; then
-    log "Home Assistant is reachable (${elapsed}s)"
+    log "Home Assistant is reachable via onboarding API (${elapsed}s)"
+    break
+  fi
+  if curl -sf -o /dev/null "${HA_URL}/" 2>&1; then
+    log "Home Assistant is reachable via root URL (${elapsed}s)"
     break
   fi
   sleep 2
@@ -63,12 +68,19 @@ if [ "$elapsed" -ge "$MAX_WAIT" ]; then
 fi
 
 # ---------- Step 2: Check onboarding status ----------
-ONBOARDING=$(curl -sf "${HA_URL}/api/onboarding")
-log "Onboarding status: ${ONBOARDING}"
+ONBOARDING=$(curl -s "${HA_URL}/api/onboarding" 2>&1) || true
+ONBOARD_HTTP=$(curl -s -o /dev/null -w "%{http_code}" "${HA_URL}/api/onboarding" 2>/dev/null || echo "000")
+log "Onboarding status (HTTP ${ONBOARD_HTTP}): ${ONBOARDING}"
+
+# If onboarding endpoint returns 404 or non-200, HA is already fully onboarded
+ALREADY_ONBOARDED="false"
+if [ "$ONBOARD_HTTP" = "404" ] || [ "$ONBOARD_HTTP" = "401" ]; then
+  ALREADY_ONBOARDED="true"
+fi
 
 USER_DONE=$(echo "$ONBOARDING" | grep -o '"step":"user","done":true' || true)
 
-if [ -n "$USER_DONE" ]; then
+if [ "$ALREADY_ONBOARDED" = "true" ] || [ -n "$USER_DONE" ]; then
   log "Onboarding user step already completed"
   if [ -f "$TOKEN_FILE" ] && [ -s "$TOKEN_FILE" ]; then
     log "Token file already exists at ${TOKEN_FILE} — validating..."

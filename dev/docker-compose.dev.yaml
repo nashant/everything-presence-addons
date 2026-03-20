@@ -30,7 +30,7 @@ services:
     environment:
       TZ: UTC
     healthcheck:
-      test: ["CMD", "curl", "-sf", "http://localhost:8123/api/onboarding"]
+      test: ["CMD", "curl", "-sf", "-o", "/dev/null", "http://localhost:8123/"]
       interval: 5s
       timeout: 3s
       retries: 30
