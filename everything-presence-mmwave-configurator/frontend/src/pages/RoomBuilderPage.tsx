@@ -1672,7 +1672,7 @@ export const RoomBuilderPage: React.FC<RoomBuilderPageProps> = ({
                 )}
               </div>
               <div className="flex items-center gap-3">
-                <span className="text-slate-400 font-medium">Snap:</span>
+                <span className="text-slate-400 font-medium">Snap Grid:</span>
                 {[0, 50, 100, 200].map((v) => (
                   <button
                     key={v}
