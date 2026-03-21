@@ -906,6 +906,10 @@ export const RoomBuilderPage: React.FC<RoomBuilderPageProps> = ({
     // Clear wall editing state when switching away from walls
     setSelectedSegment(null);
     setHoveredSegment(null);
+    // Close any open editor pop-outs
+    setSelectedDoorId(null);
+    setSelectedFurnitureId(null);
+    setShowDeviceEditor(false);
   }, []);
 
   const handleBackToDashboard = useCallback(() => {
