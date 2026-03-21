@@ -37,6 +37,13 @@ interface RoomBuilderPageProps {
 
 const clampNumber = (v: number, min: number, max: number) => Math.min(Math.max(v, min), max);
 
+/** Compute the centroid (average of vertices) for a polygon. */
+function computeCentroid(points: Array<{ x: number; y: number }>): { x: number; y: number } {
+  if (points.length === 0) return { x: 0, y: 0 };
+  const sum = points.reduce((acc, p) => ({ x: acc.x + p.x, y: acc.y + p.y }), { x: 0, y: 0 });
+  return { x: Math.round(sum.x / points.length), y: Math.round(sum.y / points.length) };
+}
+
 export const RoomBuilderPage: React.FC<RoomBuilderPageProps> = ({
   onBack,
   onNavigate,
@@ -210,7 +217,8 @@ export const RoomBuilderPage: React.FC<RoomBuilderPageProps> = ({
 
   const handlePointsChange = useCallback((nextPoints: { x: number; y: number }[]) => {
     if (!selectedRoom) return;
-    const updated: RoomConfig = { ...selectedRoom, roomShell: { points: nextPoints } };
+    const centroid = computeCentroid(nextPoints);
+    const updated: RoomConfig = { ...selectedRoom, roomShell: { points: nextPoints, centroid } };
     setRooms((prev) => prev.map((r) => (r.id === selectedRoom.id ? updated : r)));
   }, [selectedRoom]);
 
@@ -229,11 +237,12 @@ export const RoomBuilderPage: React.FC<RoomBuilderPageProps> = ({
       });
     };
 
+    const center = selectedRoom.roomShell?.centroid ?? { x: 0, y: 0 };
     const newFurniture: FurnitureInstance = {
       id: generateId(),
       typeId: furnitureType.id,
-      x: 0,
-      y: 0,
+      x: center.x,
+      y: center.y,
       width: furnitureType.defaultWidth,
       depth: furnitureType.defaultDepth,
       height: furnitureType.defaultHeight,
@@ -1287,7 +1296,11 @@ export const RoomBuilderPage: React.FC<RoomBuilderPageProps> = ({
                         profileId: pendingProfile.id,
                         entityMappings: mappings,
                         entityNamePrefix: pendingDevice.entityNamePrefix,
-                        devicePlacement: selectedRoom.devicePlacement ?? { x: 0, y: 0, rotationDeg: 0 },
+                        devicePlacement: selectedRoom.devicePlacement ?? {
+                          x: selectedRoom.roomShell?.centroid?.x ?? 0,
+                          y: selectedRoom.roomShell?.centroid?.y ?? 0,
+                          rotationDeg: 0,
+                        },
                       };
                       setRooms((prev) => prev.map((r) => (r.id === selectedRoom.id ? nextRoom : r)));
                       setSelectedProfileId(pendingProfile.id);
@@ -1409,7 +1422,11 @@ export const RoomBuilderPage: React.FC<RoomBuilderPageProps> = ({
                           if (!selectedRoom) return;
                           const nextRoom: RoomConfig = {
                             ...selectedRoom,
-                            devicePlacement: { ...(selectedRoom.devicePlacement ?? {}), x: 0, y: 0 },
+                            devicePlacement: {
+                              ...(selectedRoom.devicePlacement ?? {}),
+                              x: selectedRoom.roomShell?.centroid?.x ?? 0,
+                              y: selectedRoom.roomShell?.centroid?.y ?? 0,
+                            },
                           };
                           setRooms((prev) => prev.map((r) => (r.id === selectedRoom.id ? nextRoom : r)));
                         }}

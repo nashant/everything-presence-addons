@@ -37,6 +37,8 @@ export function isZoneRect(zone: Zone): zone is ZoneRect {
 
 export interface RoomShell {
   points: Array<{ x: number; y: number }>;
+  /** Cached centroid of the polygon, recomputed whenever points change. */
+  centroid?: { x: number; y: number };
 }
 
 export interface DevicePlacement {
