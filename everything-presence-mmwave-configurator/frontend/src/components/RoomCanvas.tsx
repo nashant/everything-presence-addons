@@ -1458,7 +1458,14 @@ export const RoomCanvas: React.FC<RoomCanvasProps> = ({
             const radarPath = radarPoints.map(toCanvasCoord);
             const pathData = radarPath.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ') + ' Z';
 
-            const iconSize = 36;
+            // Keep device icon a constant screen size regardless of zoom
+            const baseIconSize = 36;
+            const iconSize = baseIconSize / effectiveZoom;
+            const baseRadius = 12;
+            const r = baseRadius / effectiveZoom;
+            const dirLen = 18 / effectiveZoom;
+            const dirWidth = 3 / effectiveZoom;
+            const strokeW = 2 / effectiveZoom;
 
             return (
               <g style={{ pointerEvents: 'none' }}>
@@ -1490,19 +1497,19 @@ export const RoomCanvas: React.FC<RoomCanvasProps> = ({
                     <circle
                       cx={px}
                       cy={py}
-                      r={12}
+                      r={r}
                       fill="#3b82f6"
                       stroke="#1d4ed8"
-                      strokeWidth={2}
+                      strokeWidth={strokeW}
                       style={{ cursor: 'default', pointerEvents: 'none' }}
                     />
                     <line
                       x1={px}
                       y1={py}
-                      x2={px + Math.cos(rotationRad) * 18}
-                      y2={py + Math.sin(rotationRad) * 18}
+                      x2={px + Math.cos(rotationRad) * dirLen}
+                      y2={py + Math.sin(rotationRad) * dirLen}
                       stroke="#ffffff"
-                      strokeWidth={3}
+                      strokeWidth={dirWidth}
                       strokeLinecap="round"
                       style={{ pointerEvents: 'none' }}
                     />
@@ -1621,7 +1628,14 @@ export const RoomCanvas: React.FC<RoomCanvasProps> = ({
             const radarPath = radarPoints.map(toCanvasCoord);
             const pathData = radarPath.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ') + ' Z';
 
-            const iconSize = 36;
+            // Keep device icon a constant screen size regardless of zoom
+            const baseIconSize = 36;
+            const iconSize = baseIconSize / effectiveZoom;
+            const baseRadius = 12;
+            const r = baseRadius / effectiveZoom;
+            const dirLen = 18 / effectiveZoom;
+            const dirWidth = 3 / effectiveZoom;
+            const strokeW = 2 / effectiveZoom;
 
             return (
               <g>
@@ -1654,10 +1668,10 @@ export const RoomCanvas: React.FC<RoomCanvasProps> = ({
                     <circle
                       cx={px}
                       cy={py}
-                      r={12}
+                      r={r}
                       fill="#3b82f6"
                       stroke="#1d4ed8"
-                      strokeWidth={2}
+                      strokeWidth={strokeW}
                       onMouseDown={() => {
                         setDragDevice(true);
                         onDragStateChange?.(true);
@@ -1667,10 +1681,10 @@ export const RoomCanvas: React.FC<RoomCanvasProps> = ({
                     <line
                       x1={px}
                       y1={py}
-                      x2={px + Math.cos(rotationRad) * 18}
-                      y2={py + Math.sin(rotationRad) * 18}
+                      x2={px + Math.cos(rotationRad) * dirLen}
+                      y2={py + Math.sin(rotationRad) * dirLen}
                       stroke="#ffffff"
-                      strokeWidth={3}
+                      strokeWidth={dirWidth}
                       strokeLinecap="round"
                     />
                   </>
