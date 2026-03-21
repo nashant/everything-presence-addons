@@ -1031,6 +1031,9 @@ export const RoomBuilderPage: React.FC<RoomBuilderPageProps> = ({
           className="h-full w-full pl-20 pt-14 overflow-hidden overscroll-contain touch-none"
           onWheelCapture={(e) => {
             if (isCanvasDragging) return;
+            // Don't zoom when scrolling inside a pop-out panel or editor
+            const target = e.target as HTMLElement;
+            if (target.closest?.('[data-panel]')) return;
             if (e.cancelable) e.preventDefault();
             if ((e.nativeEvent as any)?.cancelable) {
               (e.nativeEvent as any).preventDefault();

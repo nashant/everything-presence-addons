@@ -22,6 +22,7 @@ export const PopOutPanel: React.FC<PopOutPanelProps> = ({
 }) => {
   return (
     <div
+      data-panel
       className={`absolute top-14 right-0 bottom-0 z-50 w-96 border-l border-slate-700 bg-slate-900/95 backdrop-blur shadow-2xl animate-in slide-in-from-right-4 fade-in duration-200 overflow-y-auto ${className}`}
     >
       <div className="sticky top-0 z-10 border-b border-slate-700 bg-slate-900/90 backdrop-blur p-4">
