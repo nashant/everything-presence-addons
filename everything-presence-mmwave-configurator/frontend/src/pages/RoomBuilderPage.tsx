@@ -7,6 +7,7 @@ import { useWallDrawing } from '../hooks/useWallDrawing';
 import { FurnitureLibrary } from '../components/FurnitureLibrary';
 import { FurnitureEditor } from '../components/FurnitureEditor';
 import { DoorEditor } from '../components/DoorEditor';
+import { DeviceEditor } from '../components/DeviceEditor';
 import { FLOOR_MATERIALS } from '../components/FloorMaterials';
 import { useDisplaySettings } from '../hooks/useDisplaySettings';
 import { getInstallationAngleSuggestion } from '../utils/rotationSuggestion';
@@ -861,6 +862,7 @@ export const RoomBuilderPage: React.FC<RoomBuilderPageProps> = ({
   const hasDevice = !!selectedRoom?.deviceId;
   // Device linking flow state: 'pick' = select device, 'discover' = entity discovery
   const [deviceLinkStep, setDeviceLinkStep] = useState<'pick' | 'discover' | null>(null);
+  const [showDeviceEditor, setShowDeviceEditor] = useState(false);
   const [pendingDeviceId, setPendingDeviceId] = useState<string | null>(null);
   const pendingDevice = useMemo(
     () => pendingDeviceId ? devices.find((d) => d.id === pendingDeviceId) ?? null : null,
@@ -1272,10 +1274,10 @@ export const RoomBuilderPage: React.FC<RoomBuilderPageProps> = ({
           {activeSection === 'devices' && (
             <PopOutPanel
               title="Devices"
-              subtitle={hasDevice ? (selectedDevice?.name || selectedDevice?.id || 'Device linked') : 'No device linked'}
+              subtitle={hasDevice ? '1 device' : 'Add a device to this room'}
               onClose={() => { setActiveSection(null); setDeviceLinkStep(null); setPendingDeviceId(null); }}
             >
-              {/* — Entity discovery step — */}
+              {/* — Entity discovery step (shown inline when picking a device) — */}
               {deviceLinkStep === 'discover' && pendingDevice && pendingProfile && selectedRoom ? (
                 <div className="space-y-3">
                   <button
@@ -1289,7 +1291,6 @@ export const RoomBuilderPage: React.FC<RoomBuilderPageProps> = ({
                     profileId={pendingProfile.id}
                     deviceName={pendingDevice.name || pendingDevice.id}
                     onComplete={(mappings: EntityMappings) => {
-                      // Link device to room
                       const nextRoom: RoomConfig = {
                         ...selectedRoom,
                         deviceId: pendingDevice.id,
@@ -1311,9 +1312,15 @@ export const RoomBuilderPage: React.FC<RoomBuilderPageProps> = ({
                   />
                 </div>
 
-              ) : !hasDevice && deviceLinkStep !== 'discover' ? (
-                /* — Device picker — */
+              ) : deviceLinkStep === 'pick' ? (
+                /* — Device picker list — */
                 <div className="space-y-3">
+                  <button
+                    onClick={() => setDeviceLinkStep(null)}
+                    className="text-xs text-slate-400 hover:text-slate-200 transition-colors"
+                  >
+                    ← Back
+                  </button>
                   {availableDevices.length === 0 ? (
                     <div className="text-center py-6 text-slate-400 text-sm">
                       <div className="text-2xl mb-2">📡</div>
@@ -1323,7 +1330,7 @@ export const RoomBuilderPage: React.FC<RoomBuilderPageProps> = ({
                     </div>
                   ) : (
                     <>
-                      <div className="text-xs text-slate-400">Select a device to link to this room:</div>
+                      <div className="text-xs text-slate-400">Select a device to link:</div>
                       {availableDevices.map((d) => {
                         const profile = profiles.find((p) => p.id === d.profileId);
                         return (
@@ -1339,9 +1346,6 @@ export const RoomBuilderPage: React.FC<RoomBuilderPageProps> = ({
                             {profile && (
                               <div className="text-xs text-slate-400 mt-0.5">{profile.name}</div>
                             )}
-                            {d.entityNamePrefix && (
-                              <div className="text-[10px] text-slate-500 mt-0.5 font-mono">{d.entityNamePrefix}</div>
-                            )}
                           </button>
                         );
                       })}
@@ -1349,124 +1353,45 @@ export const RoomBuilderPage: React.FC<RoomBuilderPageProps> = ({
                   )}
                 </div>
 
-              ) : hasDevice ? (
-                /* — Device linked: show placement controls — */
-                <div className="space-y-4">
-                  <div className="rounded-lg border border-emerald-600/30 bg-emerald-600/10 px-3 py-2 text-sm text-emerald-200">
-                    {selectedDevice?.name || selectedDevice?.id || 'Device linked'}
-                  </div>
-                  {/* Device Placement */}
-                  <div className="space-y-2">
-                    <div className="font-semibold text-slate-200 text-sm">Placement</div>
-                    <div className="grid grid-cols-2 gap-2">
-                      <label className="flex items-center gap-2">
-                        <span className="w-6 text-xs text-slate-400">X</span>
-                        <input
-                          type="number"
-                          className="w-full rounded-md border border-slate-700 bg-slate-800/70 px-2 py-1 text-sm text-slate-100 focus:border-aqua-500 focus:ring-1 focus:ring-aqua-500/50 focus:outline-none"
-                          value={selectedRoom?.devicePlacement?.x ?? 0}
-                          onChange={(e) => {
-                            if (!selectedRoom) return;
-                            const placement = { ...(selectedRoom.devicePlacement ?? { x: 0, y: 0, rotationDeg: 0 }) };
-                            placement.x = Number(e.target.value) || 0;
-                            const nextRoom: RoomConfig = { ...selectedRoom, devicePlacement: placement };
-                            setRooms((prev) => prev.map((r) => (r.id === selectedRoom.id ? nextRoom : r)));
-                          }}
-                        />
-                      </label>
-                      <label className="flex items-center gap-2">
-                        <span className="w-6 text-xs text-slate-400">Y</span>
-                        <input
-                          type="number"
-                          className="w-full rounded-md border border-slate-700 bg-slate-800/70 px-2 py-1 text-sm text-slate-100 focus:border-aqua-500 focus:ring-1 focus:ring-aqua-500/50 focus:outline-none"
-                          value={selectedRoom?.devicePlacement?.y ?? 0}
-                          onChange={(e) => {
-                            if (!selectedRoom) return;
-                            const placement = { ...(selectedRoom.devicePlacement ?? { x: 0, y: 0, rotationDeg: 0 }) };
-                            placement.y = Number(e.target.value) || 0;
-                            const nextRoom: RoomConfig = { ...selectedRoom, devicePlacement: placement };
-                            setRooms((prev) => prev.map((r) => (r.id === selectedRoom.id ? nextRoom : r)));
-                          }}
-                        />
-                      </label>
-                    </div>
-                    <label className="flex items-center gap-2">
-                      <span className="w-14 text-xs text-slate-400">Rotation</span>
-                      <input
-                        type="range"
-                        min={-180}
-                        max={180}
-                        step={1}
-                        value={selectedRoom?.devicePlacement?.rotationDeg ?? 0}
-                        onChange={(e) => {
-                          if (!selectedRoom) return;
-                          const placement = { ...(selectedRoom.devicePlacement ?? { x: 0, y: 0, rotationDeg: 0 }) };
-                          placement.rotationDeg = Number(e.target.value) || 0;
-                          const nextRoom: RoomConfig = { ...selectedRoom, devicePlacement: placement };
-                          setRooms((prev) => prev.map((r) => (r.id === selectedRoom.id ? nextRoom : r)));
-                        }}
-                        onMouseUp={(e) => {
-                          handleRotationSuggestion(Number((e.currentTarget as HTMLInputElement).value) || 0);
-                        }}
-                        onTouchEnd={(e) => {
-                          handleRotationSuggestion(Number((e.currentTarget as HTMLInputElement).value) || 0);
-                        }}
-                        className="w-full"
-                      />
-                      <span className="text-xs text-slate-300">{selectedRoom?.devicePlacement?.rotationDeg ?? 0}°</span>
-                    </label>
-                    <div className="grid grid-cols-2 gap-2">
-                      <button
-                        className="rounded-md border border-slate-700 px-2 py-1.5 text-xs font-semibold text-slate-100 transition hover:border-aqua-500"
-                        onClick={() => {
-                          if (!selectedRoom) return;
-                          const nextRoom: RoomConfig = {
-                            ...selectedRoom,
-                            devicePlacement: {
-                              ...(selectedRoom.devicePlacement ?? {}),
-                              x: selectedRoom.roomShell?.centroid?.x ?? 0,
-                              y: selectedRoom.roomShell?.centroid?.y ?? 0,
-                            },
-                          };
-                          setRooms((prev) => prev.map((r) => (r.id === selectedRoom.id ? nextRoom : r)));
-                        }}
-                      >
-                        Center
-                      </button>
-                      <button
-                        className="rounded-md border border-slate-700 px-2 py-1.5 text-xs font-semibold text-slate-100 transition hover:border-aqua-500"
-                        onClick={() => {
-                          if (!selectedRoom) return;
-                          const nextRoom: RoomConfig = {
-                            ...selectedRoom,
-                            devicePlacement: { ...(selectedRoom.devicePlacement ?? {}), rotationDeg: 0 },
-                          };
-                          setRooms((prev) => prev.map((r) => (r.id === selectedRoom.id ? nextRoom : r)));
-                        }}
-                      >
-                        Reset rotation
-                      </button>
-                    </div>
-                  </div>
-                  {/* Unlink device */}
+              ) : (
+                /* — Default: + Add Device button + device list — */
+                <div className="flex flex-col gap-2 text-sm">
                   <button
-                    onClick={() => {
-                      if (!selectedRoom) return;
-                      const nextRoom: RoomConfig = {
-                        ...selectedRoom,
-                        deviceId: undefined,
-                        profileId: undefined,
-                        entityMappings: undefined,
-                        entityNamePrefix: undefined,
-                      };
-                      setRooms((prev) => prev.map((r) => (r.id === selectedRoom.id ? nextRoom : r)));
-                    }}
-                    className="w-full rounded-lg border border-red-600/30 bg-red-600/10 px-3 py-2 text-xs font-semibold text-red-300 transition-all hover:bg-red-600/20 active:scale-95"
+                    className={`rounded-xl border px-4 py-2.5 font-semibold shadow-lg transition-all active:scale-95 ${
+                      hasDevice
+                        ? 'border-slate-700/30 bg-slate-800/30 text-slate-500 cursor-not-allowed'
+                        : 'border-slate-700/50 bg-slate-800/50 text-slate-200 hover:border-slate-600'
+                    }`}
+                    onClick={() => { if (!hasDevice) setDeviceLinkStep('pick'); }}
+                    disabled={hasDevice || !selectedRoom}
                   >
-                    Unlink Device
+                    + Add Device
                   </button>
+                  {hasDevice && selectedDevice && (
+                    <div
+                      onClick={() => {
+                        setShowDeviceEditor(true);
+                        setActiveSection(null);
+                      }}
+                      className={`rounded-lg border p-2 cursor-pointer transition-all ${
+                        showDeviceEditor
+                          ? 'border-aqua-500 bg-aqua-600/20'
+                          : 'border-slate-700 bg-slate-800/30 hover:border-slate-600'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className="text-base">📡</span>
+                        <div>
+                          <div className="text-xs text-slate-200 font-medium">{selectedDevice.name || selectedDevice.id}</div>
+                          {currentProfile && (
+                            <div className="text-[10px] text-slate-400">{currentProfile.name}</div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
-              ) : null}
+              )}
             </PopOutPanel>
           )}
 
@@ -1991,6 +1916,32 @@ export const RoomBuilderPage: React.FC<RoomBuilderPageProps> = ({
               onClose={() => setSelectedDoorId(null)}
               maxSegmentIndex={(selectedRoom?.roomShell?.points?.length ?? 1) - 1}
               validation={doorValidation}
+            />
+          )}
+
+          {/* Device Editor Panel */}
+          {showDeviceEditor && hasDevice && selectedRoom && (
+            <DeviceEditor
+              deviceName={selectedDevice?.name || selectedDevice?.id || 'Device'}
+              placement={selectedRoom.devicePlacement ?? { x: 0, y: 0, rotationDeg: 0 }}
+              roomCentroid={selectedRoom.roomShell?.centroid}
+              onPlacementChange={(placement) => {
+                const nextRoom: RoomConfig = { ...selectedRoom, devicePlacement: placement };
+                setRooms((prev) => prev.map((r) => (r.id === selectedRoom.id ? nextRoom : r)));
+              }}
+              onUnlink={() => {
+                const nextRoom: RoomConfig = {
+                  ...selectedRoom,
+                  deviceId: undefined,
+                  profileId: undefined,
+                  entityMappings: undefined,
+                  entityNamePrefix: undefined,
+                };
+                setRooms((prev) => prev.map((r) => (r.id === selectedRoom.id ? nextRoom : r)));
+                setShowDeviceEditor(false);
+              }}
+              onClose={() => setShowDeviceEditor(false)}
+              onRotationCommit={(angle) => handleRotationSuggestion(angle)}
             />
           )}
         </div>
