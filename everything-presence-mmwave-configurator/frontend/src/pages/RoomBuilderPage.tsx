@@ -886,6 +886,9 @@ export const RoomBuilderPage: React.FC<RoomBuilderPageProps> = ({
 
   const handleSectionClick = useCallback((section: EditorSection) => {
     setActiveSection((prev) => (prev === section ? null : section));
+    // Clear wall editing state when switching away from walls
+    setSelectedSegment(null);
+    setHoveredSegment(null);
   }, []);
 
   const handleBackToDashboard = useCallback(() => {
@@ -1095,10 +1098,11 @@ export const RoomBuilderPage: React.FC<RoomBuilderPageProps> = ({
                   clipRadarToWalls={clipRadarToWalls}
                   previewFrom={pendingStart}
                   previewTo={pendingStart && previewPoint ? previewPoint : null}
-                  hoveredSegment={hoveredSegment}
-                  selectedSegment={selectedSegment}
-                  onSegmentHover={(idx) => setHoveredSegment(idx)}
+                  hoveredSegment={activeSection === 'walls' ? hoveredSegment : null}
+                  selectedSegment={activeSection === 'walls' ? selectedSegment : null}
+                  onSegmentHover={(idx) => { if (activeSection === 'walls') setHoveredSegment(idx); }}
                   onSegmentSelect={(idx) => {
+                    if (activeSection !== 'walls') return;
                     setSelectedSegment(idx);
                     setSegmentDragIndex(null);
                     setSegmentDragStart(null);
@@ -1844,7 +1848,7 @@ export const RoomBuilderPage: React.FC<RoomBuilderPageProps> = ({
               </div>
             </div>
           </div>
-                {selectedSegment !== null && segmentMidpointPercent && (
+                {activeSection === 'walls' && selectedSegment !== null && segmentMidpointPercent && (
                   <div
                     className="pointer-events-auto absolute z-10"
                     style={{
