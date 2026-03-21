@@ -482,7 +482,13 @@ export const RoomBuilderPage: React.FC<RoomBuilderPageProps> = ({
         const [deviceRes, profileRes, roomRes] = await Promise.all([fetchDevices(), fetchProfiles(), fetchRooms()]);
         setDevices(deviceRes.devices);
         setProfiles(profileRes.profiles);
-        setRooms(roomRes.rooms);
+        // Ensure centroid is populated for rooms loaded from API
+        setRooms(roomRes.rooms.map((r: RoomConfig) => {
+          if (r.roomShell?.points?.length && !r.roomShell.centroid) {
+            return { ...r, roomShell: { ...r.roomShell, centroid: computeCentroid(r.roomShell.points) } };
+          }
+          return r;
+        }));
 
         const initialRoom =
           (initialRoomId && roomRes.rooms.find((r) => r.id === initialRoomId)) || roomRes.rooms[0] || null;
