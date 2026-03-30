@@ -1,18 +1,13 @@
 import React, { useCallback, useMemo, useRef, useState } from 'react';
-import { FurnitureInstance, Door, Zone, ZoneRect, ZonePolygon, isZoneRect, isZonePolygon } from '../api/types';
-import { getFurnitureIcon } from '../furniture/icons';
-import { getFurnitureColors } from '../furniture/colors';
+import { FurnitureInstance, Door, Zone, ZoneRect, isZonePolygon } from '../api/types';
 import { FloorMaterialDefs, getFloorFill } from './FloorMaterials';
 import { useThemeContext } from '../contexts/ThemeContext';
 import { furnitureRenderer } from './canvas/FurnitureItemRenderer';
 import { zoneRenderer } from './canvas/ZoneItemRenderer';
+import { renderDeviceNonInteractive, renderDeviceInteractive } from './canvas/DeviceItemRenderer';
+import { renderDoors } from './canvas/DoorItemRenderer';
 import type { ActiveDrag, CanvasContext, FurnitureDrag, ZoneDrag } from './canvas/types';
-import {
-  isPointInPolygon as isPointInPolygonGeo,
-  constrainPointToPolygon as constrainPointToPolygonGeo,
-  constrainFurnitureToPolygon as constrainFurnitureToPolygonGeo,
-  lineIntersection as lineIntersectionGeo,
-} from './canvas/geometry';
+
 
 export interface Point {
   x: number;
@@ -155,33 +150,6 @@ const closestPointOnSegment = (point: Point, segStart: Point, segEnd: Point): Po
 };
 
 // Get the four corners of a rotated rectangle (furniture)
-const getFurnitureCorners = (
-  center: Point,
-  width: number,
-  depth: number,
-  rotationDeg: number
-): Point[] => {
-  const halfW = width / 2;
-  const halfD = depth / 2;
-  const rad = (rotationDeg * Math.PI) / 180;
-  const cos = Math.cos(rad);
-  const sin = Math.sin(rad);
-
-  // Local corner offsets (before rotation)
-  const localCorners = [
-    { x: -halfW, y: -halfD }, // top-left
-    { x: halfW, y: -halfD },  // top-right
-    { x: halfW, y: halfD },   // bottom-right
-    { x: -halfW, y: halfD },  // bottom-left
-  ];
-
-  // Rotate and translate to world coordinates
-  return localCorners.map((corner) => ({
-    x: center.x + corner.x * cos - corner.y * sin,
-    y: center.y + corner.x * sin + corner.y * cos,
-  }));
-};
-
 // Find the closest point on the polygon boundary
 const findClosestPointOnPolygon = (point: Point, polygon: Point[]): Point => {
   let closestPoint = polygon[0];
@@ -200,73 +168,6 @@ const findClosestPointOnPolygon = (point: Point, polygon: Point[]): Point => {
   }
 
   return closestPoint;
-};
-
-// Constrain furniture to stay entirely inside a polygon
-// Accounts for furniture width, depth, and rotation
-const constrainFurnitureToPolygon = (
-  center: Point,
-  width: number,
-  depth: number,
-  rotationDeg: number,
-  polygon: Point[]
-): Point => {
-  if (polygon.length < 3) return center; // No valid polygon, allow anywhere
-
-  // Iteratively push the furniture inside until all corners are valid
-  let constrainedCenter = { ...center };
-  const maxIterations = 10;
-  const margin = 5; // Small margin to keep furniture slightly inside walls
-
-  for (let iteration = 0; iteration < maxIterations; iteration++) {
-    const corners = getFurnitureCorners(constrainedCenter, width, depth, rotationDeg);
-
-    // Find the corner that's most outside the polygon
-    let maxPushX = 0;
-    let maxPushY = 0;
-    let anyOutside = false;
-
-    for (const corner of corners) {
-      if (!isPointInPolygon(corner, polygon)) {
-        anyOutside = true;
-        const closestOnBoundary = findClosestPointOnPolygon(corner, polygon);
-
-        // Calculate the push vector (from corner to closest valid point, plus margin toward center)
-        const polygonCenterX = polygon.reduce((sum, p) => sum + p.x, 0) / polygon.length;
-        const polygonCenterY = polygon.reduce((sum, p) => sum + p.y, 0) / polygon.length;
-
-        // Vector from corner to closest boundary point
-        let pushX = closestOnBoundary.x - corner.x;
-        let pushY = closestOnBoundary.y - corner.y;
-
-        // Add a small push toward polygon center for margin
-        const toCenterX = polygonCenterX - closestOnBoundary.x;
-        const toCenterY = polygonCenterY - closestOnBoundary.y;
-        const toCenterLen = Math.sqrt(toCenterX ** 2 + toCenterY ** 2);
-
-        if (toCenterLen > 0) {
-          pushX += (toCenterX / toCenterLen) * margin;
-          pushY += (toCenterY / toCenterLen) * margin;
-        }
-
-        // Use the push that moves us the most (to handle multiple corners outside)
-        if (Math.abs(pushX) > Math.abs(maxPushX)) maxPushX = pushX;
-        if (Math.abs(pushY) > Math.abs(maxPushY)) maxPushY = pushY;
-      }
-    }
-
-    if (!anyOutside) {
-      break; // All corners are inside, we're done
-    }
-
-    // Apply the push to the center
-    constrainedCenter = {
-      x: constrainedCenter.x + maxPushX,
-      y: constrainedCenter.y + maxPushY,
-    };
-  }
-
-  return constrainedCenter;
 };
 
 // Simple point constraint (for backwards compatibility and cases without furniture dimensions)
@@ -295,29 +196,7 @@ const constrainPointToPolygon = (point: Point, polygon: Point[]): Point => {
   return closest;
 };
 
-// Line segment intersection helper
-const lineIntersection = (
-  p1: Point, p2: Point, p3: Point, p4: Point
-): Point | null => {
-  const x1 = p1.x, y1 = p1.y;
-  const x2 = p2.x, y2 = p2.y;
-  const x3 = p3.x, y3 = p3.y;
-  const x4 = p4.x, y4 = p4.y;
 
-  const denom = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4);
-  if (Math.abs(denom) < 1e-10) return null; // Parallel or coincident
-
-  const t = ((x1 - x3) * (y3 - y4) - (y1 - y3) * (x3 - x4)) / denom;
-  const u = -((x1 - x2) * (y1 - y3) - (y1 - y2) * (x1 - x3)) / denom;
-
-  if (t >= 0 && t <= 1 && u >= 0 && u <= 1) {
-    return {
-      x: x1 + t * (x2 - x1),
-      y: y1 + t * (y2 - y1),
-    };
-  }
-  return null;
-};
 
 export const RoomCanvas: React.FC<RoomCanvasProps> = ({
   points,
@@ -359,12 +238,11 @@ export const RoomCanvas: React.FC<RoomCanvasProps> = ({
   onFurnitureChange,
   doors = [],
   selectedDoorId,
-  onDoorChange,
+  // onDoorChange — not used by RoomCanvas; door mutations managed by parent
   isDoorPlacementMode,
   onWallSegmentClick,
   onDoorDragStart,
-  onDoorDragMove,
-  onDoorDragEnd,
+  // onDoorDragMove/onDoorDragEnd — not used by RoomCanvas; parent handles via onCanvasMove/onCanvasRelease
   zones = [],
   selectedZoneId,
   onZoneChange,
@@ -395,7 +273,6 @@ export const RoomCanvas: React.FC<RoomCanvasProps> = ({
 
   const svgRef = useRef<SVGSVGElement | null>(null);
   const [dragIdx, setDragIdx] = useState<number | null>(null);
-  const [dragDevice, setDragDevice] = useState<boolean>(false);
   const [panDrag, setPanDrag] = useState<{ start: Point; base: { x: number; y: number } } | null>(null);
   const [activeDrag, setActiveDrag] = useState<ActiveDrag>(null);
   const suppressClickRef = useRef<boolean>(false);
@@ -505,7 +382,7 @@ export const RoomCanvas: React.FC<RoomCanvasProps> = ({
   };
 
   const handleDragStart = (idx: number) => (e: React.MouseEvent<SVGCircleElement, MouseEvent>) => {
-    if (dragDevice) return; // Don't start wall drag while device is being dragged
+    if (activeDrag?.mode === 'device-drag') return; // Don't start wall drag while device is being dragged
     e.stopPropagation();
     if (e.cancelable) e.preventDefault();
     suppressClickRef.current = true;
@@ -531,11 +408,11 @@ export const RoomCanvas: React.FC<RoomCanvasProps> = ({
         furnitureRenderer.onDragEnd(activeDrag as FurnitureDrag, furniture, onFurnitureChange, canvasContext);
       }
       // Zone drags apply changes during move, nothing to finalize
+      // Device drag has no finalization — position is applied live during move
       setActiveDrag(null);
     }
 
     setDragIdx(null);
-    setDragDevice(false);
     setPanDrag(null);
     onDragStateChange?.(false);
     onCanvasRelease?.();
@@ -558,7 +435,7 @@ export const RoomCanvas: React.FC<RoomCanvasProps> = ({
       return;
     }
 
-    // Handle furniture/zone dragging via renderers
+    // Handle furniture/zone/device dragging via renderers
     if (activeDrag) {
       const mode = activeDrag.mode;
       if (mode.startsWith('furniture-')) {
@@ -570,23 +447,24 @@ export const RoomCanvas: React.FC<RoomCanvasProps> = ({
         zoneRenderer.onDragMove(pt, activeDrag as ZoneDrag, zones, canvasContext, onZoneChange);
         return;
       }
+      if (mode === 'device-drag' && onDeviceChange) {
+        const snapped = snapPoint(pt);
+        const clamped = safePoints.length >= 3
+          ? constrainPointToPolygon(snapped, safePoints)
+          : snapped;
+        onDeviceChange({
+          ...safePlacement,
+          ...clamped,
+        });
+        return;
+      }
     }
 
-    if (dragIdx === null && !dragDevice) return;
+    if (dragIdx === null) return;
     if (dragIdx !== null) {
       const next = [...safePoints];
       next[dragIdx] = snapPoint(pt);
       onChange(next);
-    } else if (dragDevice && onDeviceChange) {
-      const snapped = snapPoint(pt);
-      // Clamp device position to stay inside the room outline
-      const clamped = safePoints.length >= 3
-        ? constrainPointToPolygon(snapped, safePoints)
-        : snapped;
-      onDeviceChange({
-        ...safePlacement,
-        ...clamped,
-      });
     }
   };
 
@@ -923,168 +801,17 @@ export const RoomCanvas: React.FC<RoomCanvasProps> = ({
           })()
         )}
 
-        {/* Render doors */}
-        {showDoors && doors.map((door) => {
-          // Get the wall segment this door is on
-          if (door.segmentIndex < 0 || door.segmentIndex >= safePoints.length) return null;
-
-          const segmentStart = safePoints[door.segmentIndex];
-          const segmentEnd = safePoints[(door.segmentIndex + 1) % safePoints.length];
-          if (!segmentStart || !segmentEnd) return null;
-
-          // Calculate door position along the segment
-          const doorX = segmentStart.x + (segmentEnd.x - segmentStart.x) * door.positionOnSegment;
-          const doorY = segmentStart.y + (segmentEnd.y - segmentStart.y) * door.positionOnSegment;
-
-          // Calculate segment angle
-          const dx = segmentEnd.x - segmentStart.x;
-          const dy = segmentEnd.y - segmentStart.y;
-          const segmentAngle = Math.atan2(dy, dx) * (180 / Math.PI);
-
-          // Convert to canvas coordinates
-          const canvasDoorPos = toCanvasCoord({ x: doorX, y: doorY });
-          const canvasDoorWidth = toCanvas(door.widthMm, effectiveRangeMm);
-          // Make swing radius same as door width in world coordinates (so it's proportional)
-          const swingRadius = canvasDoorWidth;
-
-          const isSelected = selectedDoorId === door.id;
-
-          // Calculate hinge position and swing direction
-          const hingeOffset = door.swingSide === 'right' ? canvasDoorWidth / 2 : -canvasDoorWidth / 2;
-
-          // Calculate arc for a 90-degree door swing
-          // The arc traces the path of the door's free end (opposite from hinge)
-
-          // Determine which side of the wall segment the room interior is.
-          // Use the cross product of the segment direction with the vector from
-          // segment start to the room centroid. In the wall's local coordinate
-          // frame (after rotation), positive cross product means the centroid is
-          // on the positive-Y side, negative means negative-Y side.
-          const centroidX = safePoints.reduce((s, p) => s + p.x, 0) / safePoints.length;
-          const centroidY = safePoints.reduce((s, p) => s + p.y, 0) / safePoints.length;
-          const toCentroidX = centroidX - doorX;
-          const toCentroidY = centroidY - doorY;
-          // Cross product: seg × toCentroid  (positive = centroid is on +Y side in local frame)
-          const cross = dx * toCentroidY - dy * toCentroidX;
-          // inwardSign: the local-Y direction that points into the room
-          const inwardSign = cross >= 0 ? 1 : -1;
-          const arcDirection = door.swingDirection === 'in' ? inwardSign : -inwardSign;
-
-          // The arc goes from closed position (along wall) to open position (perpendicular)
-          // Start: FREE end of door when closed (opposite from hinge, along x-axis)
-          const arcStartX = door.swingSide === 'left' ? canvasDoorWidth / 2 : -canvasDoorWidth / 2;
-          const arcStartY = 0;
-
-          // End: FREE end of door when fully open (perpendicular to wall)
-          // The free end moves in the arc direction by the door width distance
-          const arcEndX = hingeOffset;
-          const arcEndY = arcDirection * canvasDoorWidth;
-
-          // Determine which arc to draw (0 = short 90° arc, 1 = long arc)
-          const largeArcFlag = 0;
-
-          // Sweep flag depends on hinge side and actual arc direction (not hardcoded in/out).
-          // We need the arc to curve toward the hinge (concave arc).
-          // In SVG coords: sweep 1 = clockwise, 0 = counterclockwise.
-          // Left hinge + arcDirection>0 (positive Y): clockwise (1)
-          // Left hinge + arcDirection<0 (negative Y): counterclockwise (0)
-          // Right hinge + arcDirection>0 (positive Y): counterclockwise (0)
-          // Right hinge + arcDirection<0 (negative Y): clockwise (1)
-          const sweepFlag = (door.swingSide === 'left') === (arcDirection > 0) ? 1 : 0;
-
-          return (
-            <g key={door.id}>
-              {/* Door group with transform */}
-              <g transform={`translate(${canvasDoorPos.x}, ${canvasDoorPos.y}) rotate(${segmentAngle})`}>
-                {/* Selection highlight (when selected) */}
-                {isSelected && (
-                  <rect
-                    x={-canvasDoorWidth / 2 - 10}
-                    y={Math.min(-15, arcEndY - 15)}
-                    width={canvasDoorWidth + 20}
-                    height={Math.abs(arcEndY) + 30}
-                    fill="rgba(6, 182, 212, 0.1)"
-                    stroke="#06b6d4"
-                    strokeWidth={2}
-                    strokeDasharray="4 4"
-                    rx={4}
-                    style={{ pointerEvents: 'none' }}
-                  />
-                )}
-
-                {/* Invisible clickable area for easier selection */}
-                <rect
-                  x={-canvasDoorWidth / 2 - 10}
-                  y={Math.min(-15, arcEndY - 15)}
-                  width={canvasDoorWidth + 20}
-                  height={Math.abs(arcEndY) + 30}
-                  fill="transparent"
-                  style={{ cursor: onDoorDragStart ? (isSelected ? 'grab' : 'pointer') : 'pointer' }}
-                  onMouseDown={(e) => {
-                    e.stopPropagation();
-                    suppressClickRef.current = false;
-
-                    // Select the door (always works)
-                    onItemSelect?.('door', door.id);
-
-                    // Start dragging only if in doors mode and already selected
-                    if (isSelected && onDoorDragStart) {
-                      onDoorDragStart(door.id, doorX, doorY);
-                      onDragStateChange?.(true);
-                    }
-                  }}
-                />
-
-                {/* Door frame/opening (perpendicular to wall) - white/light color to stand out */}
-                <line
-                  x1={-canvasDoorWidth / 2}
-                  y1={0}
-                  x2={canvasDoorWidth / 2}
-                  y2={0}
-                  stroke={isSelected ? '#06b6d4' : '#ffffff'}
-                  strokeWidth={isSelected ? 4 : 3}
-                  vectorEffect="non-scaling-stroke"
-                  style={{ cursor: 'pointer', pointerEvents: 'none' }}
-                />
-
-                {/* Door swing arc - 90 degree arc showing door swing path */}
-                {door.swingDirection && (
-                  <path
-                    d={`M ${arcStartX} ${arcStartY} A ${swingRadius} ${swingRadius} 0 ${largeArcFlag} ${sweepFlag} ${arcEndX} ${arcEndY}`}
-                    stroke={isSelected ? '#06b6d4' : '#000000'}
-                    strokeWidth={2}
-                    fill="none"
-                    strokeDasharray="6 4"
-                    vectorEffect="non-scaling-stroke"
-                    style={{ pointerEvents: 'none' }}
-                  />
-                )}
-
-                {/* Door panel - wooden brown color, showing closed position */}
-                <line
-                  x1={hingeOffset}
-                  y1={0}
-                  x2={hingeOffset}
-                  y2={arcEndY}
-                  stroke={isSelected ? '#06b6d4' : '#8b5a3c'}
-                  strokeWidth={4}
-                  vectorEffect="non-scaling-stroke"
-                  style={{ pointerEvents: 'none' }}
-                />
-
-                {/* Hinge indicator - metallic look */}
-                <circle
-                  cx={hingeOffset}
-                  cy={0}
-                  r={4}
-                  fill={isSelected ? '#06b6d4' : '#71717a'}
-                  stroke={isSelected ? '#0891b2' : '#52525b'}
-                  strokeWidth={1}
-                  style={{ pointerEvents: 'none' }}
-                />
-              </g>
-            </g>
-          );
+        {/* Render doors (via renderer) */}
+        {showDoors && renderDoors({
+          doors,
+          selectedDoorId: selectedDoorId ?? null,
+          wallPoints: safePoints,
+          toCanvasCoord,
+          toCanvasLength: (v: number) => toCanvas(v, effectiveRangeMm),
+          onItemSelect,
+          onDoorDragStart,
+          onDragStateChange,
+          suppressClickRef,
         })}
 
         {/* Render furniture (via renderer) */}
@@ -1126,361 +853,41 @@ export const RoomCanvas: React.FC<RoomCanvasProps> = ({
           roomShellPoints: safePoints,
           devicePlacement: safePlacement,
           fieldOfViewDeg: effectiveFov,
-          deviceElement: (!deviceInteractive && showDevice && devicePlacement && safePlacement) ? (() => {
-            const { x: px, y: py } = toCanvasCoord(safePlacement);
-            // Add 90 degrees so that 0 degrees points down (Y+) instead of right (X+)
-            const rotationRad = (((safePlacement.rotationDeg ?? 0) + 90) * Math.PI) / 180;
-            const halfFov = (effectiveFov * Math.PI) / 360;
-            const range = effectiveMaxRange * 1000;
-
-            // Calculate radar coverage points
-            const deviceWorld = { x: safePlacement.x, y: safePlacement.y };
-            const a1 = rotationRad - halfFov;
-            const a2 = rotationRad + halfFov;
-
-            // World coordinates for radar edges
-            const edge1World = {
-              x: deviceWorld.x + Math.cos(a1) * range,
-              y: deviceWorld.y + Math.sin(a1) * range,
-            };
-            const edge2World = {
-              x: deviceWorld.x + Math.cos(a2) * range,
-              y: deviceWorld.y + Math.sin(a2) * range,
-            };
-
-            // Build radar polygon with wall clipping
-            let radarPoints: Point[] = [deviceWorld];
-
-            if (clipRadarToWalls && safePoints.length >= 3) {
-              const minClipDistance = 10; // Minimum 10mm to avoid clipping at device position
-
-              // Clip radar edge 1 against walls
-              let clippedEdge1 = edge1World;
-              let minDist1 = Infinity;
-
-              for (let i = 0; i < safePoints.length; i++) {
-                const wallStart = safePoints[i];
-                const wallEnd = safePoints[(i + 1) % safePoints.length];
-                const intersection = lineIntersection(deviceWorld, edge1World, wallStart, wallEnd);
-
-                if (intersection) {
-                  const dist = Math.hypot(intersection.x - deviceWorld.x, intersection.y - deviceWorld.y);
-                  // Only clip if the intersection is beyond minimum distance from device
-                  if (dist > minClipDistance && dist < minDist1) {
-                    minDist1 = dist;
-                    clippedEdge1 = intersection;
-                  }
-                }
-              }
-
-              // Clip radar edge 2 against walls
-              let clippedEdge2 = edge2World;
-              let minDist2 = Infinity;
-
-              for (let i = 0; i < safePoints.length; i++) {
-                const wallStart = safePoints[i];
-                const wallEnd = safePoints[(i + 1) % safePoints.length];
-                const intersection = lineIntersection(deviceWorld, edge2World, wallStart, wallEnd);
-
-                if (intersection) {
-                  const dist = Math.hypot(intersection.x - deviceWorld.x, intersection.y - deviceWorld.y);
-                  // Only clip if the intersection is beyond minimum distance from device
-                  if (dist > minClipDistance && dist < minDist2) {
-                    minDist2 = dist;
-                    clippedEdge2 = intersection;
-                  }
-                }
-              }
-
-              // Sample points along the arc to check for wall intersections
-              const arcSteps = 32;
-              const angleStep = (effectiveFov * Math.PI / 180) / arcSteps;
-
-              for (let i = 0; i <= arcSteps; i++) {
-                const angle = a1 + i * angleStep;
-                const rayEnd = {
-                  x: deviceWorld.x + Math.cos(angle) * range,
-                  y: deviceWorld.y + Math.sin(angle) * range,
-                };
-
-                let clippedPoint = rayEnd;
-                let minDist = Infinity;
-
-                for (let j = 0; j < safePoints.length; j++) {
-                  const wallStart = safePoints[j];
-                  const wallEnd = safePoints[(j + 1) % safePoints.length];
-                  const intersection = lineIntersection(deviceWorld, rayEnd, wallStart, wallEnd);
-
-                  if (intersection) {
-                    const dist = Math.hypot(intersection.x - deviceWorld.x, intersection.y - deviceWorld.y);
-                    // Only clip if the intersection is beyond minimum distance from device
-                    if (dist > minClipDistance && dist < minDist) {
-                      minDist = dist;
-                      clippedPoint = intersection;
-                    }
-                  }
-                }
-
-                radarPoints.push(clippedPoint);
-              }
-            } else {
-              // No wall clipping - draw proper arc
-              const arcSteps = 32;
-              const angleStep = (effectiveFov * Math.PI / 180) / arcSteps;
-
-              for (let i = 0; i <= arcSteps; i++) {
-                const angle = a1 + i * angleStep;
-                const arcPoint = {
-                  x: deviceWorld.x + Math.cos(angle) * range,
-                  y: deviceWorld.y + Math.sin(angle) * range,
-                };
-                radarPoints.push(arcPoint);
-              }
-            }
-
-            // Convert to canvas coordinates
-            const radarPath = radarPoints.map(toCanvasCoord);
-            const pathData = radarPath.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ') + ' Z';
-
-            // Keep device icon a constant screen size regardless of zoom
-            const baseIconSize = 36;
-            const iconSize = baseIconSize / effectiveZoom;
-            const baseRadius = 12;
-            const r = baseRadius / effectiveZoom;
-            const dirLen = 18 / effectiveZoom;
-            const dirWidth = 3 / effectiveZoom;
-            const strokeW = 2 / effectiveZoom;
-
-            return (
-              <g style={{ pointerEvents: 'none' }}>
-                {/* Radar coverage overlay - visible but non-blocking with pointerEvents: 'none' */}
-                {showRadar && (
-                  <path
-                    d={pathData}
-                    fill="#22c55e22"
-                    stroke="#22c55e"
-                    strokeWidth={1.5}
-                    vectorEffect="non-scaling-stroke"
-                    style={{ pointerEvents: 'none' }}
-                  />
-                )}
-
-                {/* Device icon or fallback */}
-                {deviceIconUrl ? (
-                  <image
-                    href={deviceIconUrl}
-                    x={px - iconSize / 2}
-                    y={py - iconSize / 2}
-                    width={iconSize}
-                    height={iconSize}
-                    style={{ cursor: 'default', pointerEvents: 'none' }}
-                  />
-                ) : (
-                  <>
-                    {/* Fallback: circle with direction indicator */}
-                    <circle
-                      cx={px}
-                      cy={py}
-                      r={r}
-                      fill="#3b82f6"
-                      stroke="#1d4ed8"
-                      strokeWidth={strokeW}
-                      style={{ cursor: 'default', pointerEvents: 'none' }}
-                    />
-                    <line
-                      x1={px}
-                      y1={py}
-                      x2={px + Math.cos(rotationRad) * dirLen}
-                      y2={py + Math.sin(rotationRad) * dirLen}
-                      stroke="#ffffff"
-                      strokeWidth={dirWidth}
-                      strokeLinecap="round"
-                      style={{ pointerEvents: 'none' }}
-                    />
-                  </>
-                )}
-              </g>
-            );
-          })() : undefined,
+          deviceElement: (!deviceInteractive && showDevice && devicePlacement && safePlacement)
+            ? renderDeviceNonInteractive({
+                placement: safePlacement,
+                fovDeg: effectiveFov,
+                maxRangeMeters: effectiveMaxRange,
+                wallPoints: safePoints,
+                clipToWalls: !!clipRadarToWalls,
+                showRadar: !!showRadar,
+                iconUrl: deviceIconUrl,
+                zoom: effectiveZoom,
+                toCanvasCoord,
+              })
+            : undefined,
         })}
 
         {/* Device rendering - when interactive (Room Builder), render AFTER overlay so device can be dragged */}
-        {deviceInteractive && showDevice && devicePlacement && safePlacement && (
-          (() => {
-            const { x: px, y: py } = toCanvasCoord(safePlacement);
-            // Add 90 degrees so that 0 degrees points down (Y+) instead of right (X+)
-            const rotationRad = (((safePlacement.rotationDeg ?? 0) + 90) * Math.PI) / 180;
-            const halfFov = (effectiveFov * Math.PI) / 360;
-            const range = effectiveMaxRange * 1000;
-
-            // Calculate radar coverage points
-            const deviceWorld = { x: safePlacement.x, y: safePlacement.y };
-            const a1 = rotationRad - halfFov;
-            const a2 = rotationRad + halfFov;
-
-            // World coordinates for radar edges
-            const edge1World = {
-              x: deviceWorld.x + Math.cos(a1) * range,
-              y: deviceWorld.y + Math.sin(a1) * range,
-            };
-            const edge2World = {
-              x: deviceWorld.x + Math.cos(a2) * range,
-              y: deviceWorld.y + Math.sin(a2) * range,
-            };
-
-            // Build radar polygon with wall clipping
-            let radarPoints: Point[] = [deviceWorld];
-
-            if (clipRadarToWalls && safePoints.length >= 3) {
-              const minClipDistance = 10;
-
-              let clippedEdge1 = edge1World;
-              let minDist1 = Infinity;
-
-              for (let i = 0; i < safePoints.length; i++) {
-                const wallStart = safePoints[i];
-                const wallEnd = safePoints[(i + 1) % safePoints.length];
-                const intersection = lineIntersection(deviceWorld, edge1World, wallStart, wallEnd);
-
-                if (intersection) {
-                  const dist = Math.hypot(intersection.x - deviceWorld.x, intersection.y - deviceWorld.y);
-                  if (dist > minClipDistance && dist < minDist1) {
-                    minDist1 = dist;
-                    clippedEdge1 = intersection;
-                  }
-                }
-              }
-
-              let clippedEdge2 = edge2World;
-              let minDist2 = Infinity;
-
-              for (let i = 0; i < safePoints.length; i++) {
-                const wallStart = safePoints[i];
-                const wallEnd = safePoints[(i + 1) % safePoints.length];
-                const intersection = lineIntersection(deviceWorld, edge2World, wallStart, wallEnd);
-
-                if (intersection) {
-                  const dist = Math.hypot(intersection.x - deviceWorld.x, intersection.y - deviceWorld.y);
-                  if (dist > minClipDistance && dist < minDist2) {
-                    minDist2 = dist;
-                    clippedEdge2 = intersection;
-                  }
-                }
-              }
-
-              const arcSteps = 32;
-              const angleStep = (effectiveFov * Math.PI / 180) / arcSteps;
-
-              for (let i = 0; i <= arcSteps; i++) {
-                const angle = a1 + i * angleStep;
-                const rayEnd = {
-                  x: deviceWorld.x + Math.cos(angle) * range,
-                  y: deviceWorld.y + Math.sin(angle) * range,
-                };
-
-                let clippedPoint = rayEnd;
-                let minDist = Infinity;
-
-                for (let j = 0; j < safePoints.length; j++) {
-                  const wallStart = safePoints[j];
-                  const wallEnd = safePoints[(j + 1) % safePoints.length];
-                  const intersection = lineIntersection(deviceWorld, rayEnd, wallStart, wallEnd);
-
-                  if (intersection) {
-                    const dist = Math.hypot(intersection.x - deviceWorld.x, intersection.y - deviceWorld.y);
-                    if (dist > minClipDistance && dist < minDist) {
-                      minDist = dist;
-                      clippedPoint = intersection;
-                    }
-                  }
-                }
-
-                radarPoints.push(clippedPoint);
-              }
-            } else {
-              const arcSteps = 32;
-              for (let i = 0; i <= arcSteps; i++) {
-                const angle = a1 + (i / arcSteps) * (a2 - a1);
-                const arcPoint = {
-                  x: deviceWorld.x + Math.cos(angle) * range,
-                  y: deviceWorld.y + Math.sin(angle) * range,
-                };
-                radarPoints.push(arcPoint);
-              }
-            }
-
-            const radarPath = radarPoints.map(toCanvasCoord);
-            const pathData = radarPath.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ') + ' Z';
-
-            // Keep device icon a constant screen size regardless of zoom
-            const baseIconSize = 36;
-            const iconSize = baseIconSize / effectiveZoom;
-            const baseRadius = 12;
-            const r = baseRadius / effectiveZoom;
-            const dirLen = 18 / effectiveZoom;
-            const dirWidth = 3 / effectiveZoom;
-            const strokeW = 2 / effectiveZoom;
-
-            return (
-              <g>
-                {showRadar && (
-                  <path
-                    d={pathData}
-                    fill="#22c55e22"
-                    stroke="#22c55e"
-                    strokeWidth={1.5}
-                    vectorEffect="non-scaling-stroke"
-                    style={{ pointerEvents: 'none' }}
-                  />
-                )}
-
-                {deviceIconUrl ? (
-                  <image
-                    href={deviceIconUrl}
-                    x={px - iconSize / 2}
-                    y={py - iconSize / 2}
-                    width={iconSize}
-                    height={iconSize}
-                    style={{ cursor: onDeviceChange ? 'grab' : 'pointer', pointerEvents: 'all' }}
-                    onMouseDown={() => {
-                      onItemSelect?.('device', 'device');
-                      if (!onDeviceChange) return;
-                      setDragDevice(true);
-                      onDragStateChange?.(true);
-                    }}
-                  />
-                ) : (
-                  <>
-                    <circle
-                      cx={px}
-                      cy={py}
-                      r={r}
-                      fill="#3b82f6"
-                      stroke="#1d4ed8"
-                      strokeWidth={strokeW}
-                      onMouseDown={() => {
-                        onItemSelect?.('device', 'device');
-                        if (!onDeviceChange) return;
-                        setDragDevice(true);
-                        onDragStateChange?.(true);
-                      }}
-                      style={{ cursor: onDeviceChange ? 'grab' : 'pointer' }}
-                    />
-                    <line
-                      x1={px}
-                      y1={py}
-                      x2={px + Math.cos(rotationRad) * dirLen}
-                      y2={py + Math.sin(rotationRad) * dirLen}
-                      stroke="#ffffff"
-                      strokeWidth={dirWidth}
-                      strokeLinecap="round"
-                    />
-                  </>
-                )}
-              </g>
-            );
-          })()
-        )}
+        {deviceInteractive && showDevice && devicePlacement && safePlacement &&
+          renderDeviceInteractive({
+            placement: safePlacement,
+            fovDeg: effectiveFov,
+            maxRangeMeters: effectiveMaxRange,
+            wallPoints: safePoints,
+            clipToWalls: !!clipRadarToWalls,
+            showRadar: !!showRadar,
+            iconUrl: deviceIconUrl,
+            zoom: effectiveZoom,
+            toCanvasCoord,
+            canDrag: !!onDeviceChange,
+            onDragStart: () => {
+              setActiveDrag({ mode: 'device-drag' });
+              onDragStateChange?.(true);
+            },
+            onSelect: () => onItemSelect?.('device', 'device'),
+          })
+        }
       </svg>
     </div>
   );

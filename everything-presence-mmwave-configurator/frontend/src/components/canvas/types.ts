@@ -41,6 +41,7 @@ export type ActiveDrag =
   | ZoneMoveState
   | ZoneVertexState
   | ZoneResizeState
+  | DeviceDragState
   | null;
 
 export interface FurnitureMoveState {
@@ -85,6 +86,10 @@ export interface ZoneVertexState {
   start: Point;
   basePos: Point;
   vertexIndex: number;
+}
+
+export interface DeviceDragState {
+  mode: 'device-drag';
 }
 
 export interface ZoneResizeState {

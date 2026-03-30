@@ -188,3 +188,96 @@ export const lineIntersection = (
 
   return null;
 };
+
+// ---------------------------------------------------------------------------
+// Radar / device geometry
+// ---------------------------------------------------------------------------
+
+export interface RadarPathParams {
+  /** Device position in world coords (mm) */
+  placement: { x: number; y: number; rotationDeg?: number };
+  /** Field-of-view in degrees */
+  fovDeg: number;
+  /** Maximum detection range in meters */
+  maxRangeMeters: number;
+  /** Room wall polygon in world coords */
+  wallPoints: Point[];
+  /** Whether to clip the radar cone at wall boundaries */
+  clipToWalls: boolean;
+}
+
+/**
+ * Build an SVG path-data string for a radar/sensor coverage cone.
+ * Handles wall clipping when enabled (ray-march each arc step against wall segments).
+ */
+export const buildRadarPath = (params: RadarPathParams): Point[] => {
+  const { placement, fovDeg, maxRangeMeters, wallPoints, clipToWalls } = params;
+  // Add 90° so 0° points down (Y+) instead of right (X+)
+  const rotationRad = (((placement.rotationDeg ?? 0) + 90) * Math.PI) / 180;
+  const halfFov = (fovDeg * Math.PI) / 360;
+  const range = maxRangeMeters * 1000; // meters → mm
+  const deviceWorld: Point = { x: placement.x, y: placement.y };
+  const a1 = rotationRad - halfFov;
+  const a2 = rotationRad + halfFov;
+
+  const radarPoints: Point[] = [deviceWorld];
+
+  if (clipToWalls && wallPoints.length >= 3) {
+    const minClipDistance = 10; // mm — avoid clipping at device position
+    const arcSteps = 32;
+    const angleStep = (fovDeg * Math.PI / 180) / arcSteps;
+
+    for (let i = 0; i <= arcSteps; i++) {
+      const angle = a1 + i * angleStep;
+      const rayEnd: Point = {
+        x: deviceWorld.x + Math.cos(angle) * range,
+        y: deviceWorld.y + Math.sin(angle) * range,
+      };
+
+      let clippedPoint = rayEnd;
+      let minDist = Infinity;
+
+      for (let j = 0; j < wallPoints.length; j++) {
+        const wallStart = wallPoints[j];
+        const wallEnd = wallPoints[(j + 1) % wallPoints.length];
+        const intersection = lineIntersection(deviceWorld, rayEnd, wallStart, wallEnd);
+
+        if (intersection) {
+          const dist = Math.hypot(
+            intersection.x - deviceWorld.x,
+            intersection.y - deviceWorld.y,
+          );
+          if (dist > minClipDistance && dist < minDist) {
+            minDist = dist;
+            clippedPoint = intersection;
+          }
+        }
+      }
+
+      radarPoints.push(clippedPoint);
+    }
+  } else {
+    // No wall clipping — draw proper arc
+    const arcSteps = 32;
+    for (let i = 0; i <= arcSteps; i++) {
+      const angle = a1 + (i / arcSteps) * (a2 - a1);
+      radarPoints.push({
+        x: deviceWorld.x + Math.cos(angle) * range,
+        y: deviceWorld.y + Math.sin(angle) * range,
+      });
+    }
+  }
+
+  return radarPoints;
+};
+
+/**
+ * Convert radar world-points to an SVG path string using a coordinate transform.
+ */
+export const radarPointsToPathData = (
+  radarPoints: Point[],
+  toCanvasCoord: (p: Point) => { x: number; y: number },
+): string => {
+  const canvasPoints = radarPoints.map(toCanvasCoord);
+  return canvasPoints.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ') + ' Z';
+};
