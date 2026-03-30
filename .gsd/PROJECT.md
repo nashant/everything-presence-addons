@@ -1,5 +1,13 @@
 # Everything Presence — Room-First Configurator
 
+> **⚠️ BRANCHING RULES — READ BEFORE ANY BRANCH OPERATION**
+>
+> - **Integration branch:** `feat/multi-device-rooms`
+> - **Slice branches:** `feat/multi-device-rooms--M0xx-S0x` (double-dash separator)
+> - **Always branch from `feat/multi-device-rooms`** so `.gsd/` is inherited
+> - **NEVER use `gsd/` prefix branches.** The GSD default naming is overridden.
+> - See D007 in DECISIONS.md for full rationale.
+
 A rewrite of the Everything Presence mmWave configurator with a room-first architecture. Instead of the current device-first wizard (pick device → discover entities → create room → place device), the flow is: create rooms first, then add sensors to them.
 
 ## Current State
