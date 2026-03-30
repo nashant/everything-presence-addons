@@ -1,5 +1,8 @@
 # M003: Multi-Device Room Support
 
+**Branch:** `feat/multi-device-rooms` (integration branch, from `feat/room-first-ux`)
+**Task branches:** `feat/multi-device-rooms/M003/S01/T01`, `.../T02`, etc.
+
 **Vision:** Allow multiple EP sensors in a single room — each with its own placement, radar cone, profile, and entity mappings — so users can cover large rooms or complex spaces with overlapping sensor coverage.
 
 ## Success Criteria
