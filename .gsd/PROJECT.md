@@ -4,8 +4,9 @@ A rewrite of the Everything Presence mmWave configurator with a room-first archi
 
 ## Current State
 
-- Branch: `feat/room-first-ux` from upstream main (2f097aa)
+- Branch: `feat/multi-device-rooms` (M003 in progress)
 - **M001 complete** — Room-first configurator rewrite delivered
+- **M002 complete** — RoomCanvas generic item system: 4 extracted renderers, unified drag state machine, RoomCanvas reduced from 1988 to 894 lines
 - Dashboard landing page with rooms grouped by floor
 - HA import (floors + areas), manual room/floor creation
 - EditorSidebar with pop-out panels (Walls, Devices, Zones, Doors, Furniture, Settings)
@@ -13,7 +14,7 @@ A rewrite of the Everything Presence mmWave configurator with a room-first archi
 - Zone editing embedded in Room Builder
 - Dev stack: Docker compose with HA 2026.2, Mosquitto, mock devices
 - Backend: 0 TS errors, 16/16 vitest tests pass
-- Frontend: 137 TS errors (non-blocking, Vite build succeeds)
+- Frontend: 124 TS errors (non-blocking, Vite build succeeds), 52 canvas module tests pass
 
 ## Tech Stack
 
@@ -28,13 +29,15 @@ A rewrite of the Everything Presence mmWave configurator with a room-first archi
 
 - **Entry point**: DashboardPage (rooms grouped by floor)
 - **Room editing**: RoomBuilderPage with EditorSidebar + PopOutPanel sections
+- **Canvas rendering**: Generic item system in `components/canvas/` — per-type renderers (Device, Door, Furniture, Zone) with shared `ItemRenderer` interface, unified `ActiveDrag` state machine, shared geometry module
 - **Device attachment**: Inline device picker + EntityDiscovery (bypasses WizardPage)
 - **Navigation**: Dashboard → RoomBuilder → Save → Dashboard
 - **Backend routes**: `/api/rooms`, `/api/floors`, `/api/import/ha`, `/api/health`
 
 ## Known Issues
 
-- Frontend TS error count at 137 (30 above S02 baseline of 107) — unused vars and type gaps in reworked RoomBuilderPage
+- Frontend TS error count at 124 — unused vars and type gaps across various files (10 in canvas/ module are unused-import warnings)
+- RoomCanvas at 894 lines — wall editing and coordinate transforms remain; further extraction possible but not planned
 - RoomBuilderPage.tsx is 2,269 lines — refactoring candidate
 - npm lockfile must use npm 10.8.2 for Docker compatibility
 - HA ingress not independently verified (dev stack uses direct port)

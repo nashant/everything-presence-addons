@@ -40,7 +40,7 @@ This milestone is complete only when all are true:
 
 - [x] **S01: Generic drag state machine + furniture/zone extraction** `risk:high` `depends:[]`
   > After this: Furniture and zone items render and interact through the generic system; RoomCanvas handleMouseMove/handleMouseUp are simplified; drag/resize/rotate all work in the browser
-- [ ] **S02: Device + door extraction and props cleanup** `risk:medium` `depends:[S01]`
+- [x] **S02: Device + door extraction and props cleanup** `risk:medium` `depends:[S01]`
   > After this: All four item types use the generic system; RoomCanvas is under 600 lines; item-specific props are replaced with generic item collections; WizardPage and ZoneCanvas confirmed working
 
 ## Boundary Map
