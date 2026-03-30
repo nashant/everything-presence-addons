@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { storage } from '../config/storage';
-import { DevicePlacement, Door, EntityMappings, FurnitureInstance, RoomConfig, RoomShell, Zone, ZoneRect, ZonePolygon, ZoneEntitySet, TargetEntitySet } from '../domain/types';
+import { DevicePlacement, Door, EntityMappings, FurnitureInstance, RoomConfig, RoomShell, SensorAttachment, Zone, ZoneRect, ZonePolygon, ZoneEntitySet, TargetEntitySet } from '../domain/types';
 
 export const createRoomsRouter = (): Router => {
   const router = Router();
@@ -233,31 +233,74 @@ export const createRoomsRouter = (): Router => {
     return result;
   };
 
-  const normalizeRoom = (body: any, existingId?: string): RoomConfig => ({
-    id: body?.id ?? existingId ?? uuidv4(),
-    name: typeof body?.name === 'string' && body.name.trim() ? body.name.trim() : 'Untitled room',
-    floorId: typeof body?.floorId === 'string' && body.floorId.trim() ? body.floorId.trim() : undefined,
-    deviceId: typeof body?.deviceId === 'string' && body.deviceId.trim() ? body.deviceId.trim() : undefined,
-    profileId: typeof body?.profileId === 'string' && body.profileId.trim() ? body.profileId.trim() : undefined,
-    units: body?.units === 'imperial' ? 'imperial' : 'metric',
-    zones: Array.isArray(body?.zones)
-      ? body.zones.map((z: any, idx: number) => parseZone(z, `zone-${idx + 1}`))
-      : [],
-    // Entity identification - entityMappings is preferred, entityNamePrefix is legacy fallback
-    entityMappings: parseEntityMappings(body?.entityMappings),
-    entityNamePrefix: typeof body?.entityNamePrefix === 'string' && body.entityNamePrefix.trim() ? body.entityNamePrefix.trim() : undefined,
-    roomShell: parseRoomShell(body?.roomShell),
-    roomShellFillMode: body?.roomShellFillMode === 'overlay' || body?.roomShellFillMode === 'material' ? body.roomShellFillMode : undefined,
-    floorMaterial: ['wood-oak', 'wood-walnut', 'carpet-beige', 'carpet-gray', 'carpet-blue', 'carpet-brown', 'carpet-green', 'tile', 'laminate', 'concrete', 'none'].includes(body?.floorMaterial) ? body.floorMaterial : undefined,
-    devicePlacement: parseDevicePlacement(body?.devicePlacement),
-    furniture: Array.isArray(body?.furniture)
-      ? body.furniture.map(parseFurniture).filter((f: FurnitureInstance | null) => f !== null)
-      : undefined,
-    doors: Array.isArray(body?.doors)
-      ? body.doors.map(parseDoor).filter((d: Door | null) => d !== null)
-      : undefined,
-    metadata: body?.metadata ?? {},
-  });
+  const parseSensorAttachment = (sensor: any): SensorAttachment | null => {
+    if (!sensor || typeof sensor.deviceId !== 'string' || !sensor.deviceId.trim()) {
+      return null;
+    }
+    return {
+      deviceId: sensor.deviceId.trim(),
+      profileId: typeof sensor.profileId === 'string' && sensor.profileId.trim() ? sensor.profileId.trim() : undefined,
+      placement: parseDevicePlacement(sensor.placement),
+    };
+  };
+
+  const normalizeRoom = (body: any, existingId?: string): RoomConfig => {
+    // Parse sensors[] if provided
+    const parsedSensors: SensorAttachment[] | undefined = Array.isArray(body?.sensors)
+      ? body.sensors.map(parseSensorAttachment).filter((s: SensorAttachment | null): s is SensorAttachment => s !== null)
+      : undefined;
+
+    // Parse legacy singular fields
+    const legacyDeviceId = typeof body?.deviceId === 'string' && body.deviceId.trim() ? body.deviceId.trim() : undefined;
+    const legacyProfileId = typeof body?.profileId === 'string' && body.profileId.trim() ? body.profileId.trim() : undefined;
+    const legacyPlacement = parseDevicePlacement(body?.devicePlacement);
+
+    // Build sensors array:
+    // - If sensors[] was provided and non-empty, use it
+    // - Else if legacy deviceId exists, synthesize sensors[0] from legacy fields
+    let sensors: SensorAttachment[] | undefined;
+    if (parsedSensors && parsedSensors.length > 0) {
+      sensors = parsedSensors;
+    } else if (legacyDeviceId) {
+      sensors = [{
+        deviceId: legacyDeviceId,
+        profileId: legacyProfileId,
+        placement: legacyPlacement,
+      }];
+    }
+
+    // Backfill legacy fields from sensors[0] for backward compat
+    const primary = sensors?.[0];
+    const deviceId = primary?.deviceId ?? legacyDeviceId;
+    const profileId = primary?.profileId ?? legacyProfileId;
+    const devicePlacement = primary?.placement ?? legacyPlacement;
+
+    return {
+      id: body?.id ?? existingId ?? uuidv4(),
+      name: typeof body?.name === 'string' && body.name.trim() ? body.name.trim() : 'Untitled room',
+      floorId: typeof body?.floorId === 'string' && body.floorId.trim() ? body.floorId.trim() : undefined,
+      deviceId,
+      profileId,
+      units: body?.units === 'imperial' ? 'imperial' : 'metric',
+      zones: Array.isArray(body?.zones)
+        ? body.zones.map((z: any, idx: number) => parseZone(z, `zone-${idx + 1}`))
+        : [],
+      sensors,
+      entityMappings: parseEntityMappings(body?.entityMappings),
+      entityNamePrefix: typeof body?.entityNamePrefix === 'string' && body.entityNamePrefix.trim() ? body.entityNamePrefix.trim() : undefined,
+      roomShell: parseRoomShell(body?.roomShell),
+      roomShellFillMode: body?.roomShellFillMode === 'overlay' || body?.roomShellFillMode === 'material' ? body.roomShellFillMode : undefined,
+      floorMaterial: ['wood-oak', 'wood-walnut', 'carpet-beige', 'carpet-gray', 'carpet-blue', 'carpet-brown', 'carpet-green', 'tile', 'laminate', 'concrete', 'none'].includes(body?.floorMaterial) ? body.floorMaterial : undefined,
+      devicePlacement,
+      furniture: Array.isArray(body?.furniture)
+        ? body.furniture.map(parseFurniture).filter((f: FurnitureInstance | null) => f !== null)
+        : undefined,
+      doors: Array.isArray(body?.doors)
+        ? body.doors.map(parseDoor).filter((d: Door | null) => d !== null)
+        : undefined,
+      metadata: body?.metadata ?? {},
+    };
+  };
 
   router.get('/', (_req, res) => {
     res.json({ rooms: storage.listRooms() });

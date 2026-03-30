@@ -47,6 +47,13 @@ export interface DevicePlacement {
   rotationDeg?: number;
 }
 
+/** A sensor attached to a room. Multiple sensors per room are supported. */
+export interface SensorAttachment {
+  deviceId: string;
+  profileId?: string;
+  placement?: DevicePlacement;
+}
+
 export interface FurnitureInstance {
   id: string;
   typeId: string;
@@ -207,10 +214,14 @@ export interface RoomConfig {
   id: string;
   name: string;
   floorId?: string;
+  /** @deprecated Use sensors[0].deviceId instead */
   deviceId?: string;
+  /** @deprecated Use sensors[0].profileId instead */
   profileId?: string;
   units: 'metric' | 'imperial';
   zones: Zone[];
+  /** Sensors attached to this room. Replaces singular deviceId/profileId/devicePlacement. */
+  sensors?: SensorAttachment[];
 
   // Entity identification - NEW: entityMappings is preferred
   entityMappings?: EntityMappings;  // Resolved entity IDs from discovery
