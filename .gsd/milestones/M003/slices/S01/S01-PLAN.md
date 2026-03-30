@@ -39,7 +39,7 @@
 
 ## Tasks
 
-- [ ] **T01: Add SensorAttachment type and update RoomConfig + normalizeRoom** `est:30m`
+- [x] **T01: Add SensorAttachment type and update RoomConfig + normalizeRoom** `est:30m`
   - Why: The data model change is the foundation everything else builds on
   - Files: `backend/src/domain/types.ts`, `backend/src/routes/rooms.ts`
   - Do:
@@ -53,7 +53,7 @@
   - Verify: `npx tsc --noEmit` passes
   - Done when: RoomConfig has sensors[], normalizeRoom handles both formats
 
-- [ ] **T02: Startup migration + integration tests** `est:30m`
+- [x] **T02: Startup migration + integration tests** `est:30m`
   - Why: Existing rooms on disk need sensors[] written, and tests prove the contract
   - Files: `backend/src/routes/rooms.ts`, `backend/src/__tests__/integration/rooms.test.ts`
   - Do:

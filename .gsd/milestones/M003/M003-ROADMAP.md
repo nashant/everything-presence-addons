@@ -51,7 +51,7 @@ This milestone is complete only when all are true:
 
 ## Slices
 
-- [ ] **S01: Backend sensors[] data model + migration** `risk:high` `depends:[]`
+- [x] **S01: Backend sensors[] data model + migration** `risk:high` `depends:[]`
   > After this: Backend API returns rooms with `sensors[]` array. Existing rooms auto-migrate from `deviceId` → `sensors[0]`. `POST/PUT /api/rooms` accepts both old and new format. All backend tests pass.
 
 - [ ] **S02: Frontend data model + RoomCanvas multi-sensor rendering** `risk:medium` `depends:[S01]`
