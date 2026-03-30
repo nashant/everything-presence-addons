@@ -523,7 +523,6 @@ function App() {
                 setSelectedRoomId(roomId);
                 if (profileId) setSelectedProfileId(profileId);
               }}
-              onAddDevice={handleAddDevice}
             />
           )}
         {view === 'wizard' && (

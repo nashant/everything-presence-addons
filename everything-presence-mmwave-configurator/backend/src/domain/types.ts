@@ -210,7 +210,7 @@ export interface RoomConfig {
   deviceId?: string;
   profileId?: string;
   units: 'metric' | 'imperial';
-  zones: ZoneRect[];
+  zones: Zone[];
 
   // Entity identification - NEW: entityMappings is preferred
   entityMappings?: EntityMappings;  // Resolved entity IDs from discovery

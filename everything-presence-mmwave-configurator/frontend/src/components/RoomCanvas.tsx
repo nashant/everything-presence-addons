@@ -1,9 +1,18 @@
-import React, { useMemo, useRef, useState } from 'react';
-import { FurnitureInstance, Door } from '../api/types';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
+import { FurnitureInstance, Door, Zone, ZoneRect, ZonePolygon, isZoneRect, isZonePolygon } from '../api/types';
 import { getFurnitureIcon } from '../furniture/icons';
 import { getFurnitureColors } from '../furniture/colors';
 import { FloorMaterialDefs, getFloorFill } from './FloorMaterials';
 import { useThemeContext } from '../contexts/ThemeContext';
+import { furnitureRenderer } from './canvas/FurnitureItemRenderer';
+import { zoneRenderer } from './canvas/ZoneItemRenderer';
+import type { ActiveDrag, CanvasContext, FurnitureDrag, ZoneDrag } from './canvas/types';
+import {
+  isPointInPolygon as isPointInPolygonGeo,
+  constrainPointToPolygon as constrainPointToPolygonGeo,
+  constrainFurnitureToPolygon as constrainFurnitureToPolygonGeo,
+  lineIntersection as lineIntersectionGeo,
+} from './canvas/geometry';
 
 export interface Point {
   x: number;
@@ -15,6 +24,8 @@ export interface DevicePlacement {
   y: number;
   rotationDeg?: number;
 }
+
+export type CanvasItemType = 'device' | 'zone' | 'door' | 'furniture';
 
 interface RoomCanvasProps {
   points: Point[];
@@ -31,6 +42,7 @@ interface RoomCanvasProps {
   zoom?: number;
   devicePlacement?: DevicePlacement;
   onDeviceChange?: (placement: DevicePlacement) => void;
+  onItemSelect?: (type: CanvasItemType, id: string) => void;
   fieldOfViewDeg?: number;
   maxRangeMeters?: number;
   deviceIconUrl?: string;
@@ -63,17 +75,20 @@ interface RoomCanvasProps {
   lockShell?: boolean;
   furniture?: FurnitureInstance[];
   selectedFurnitureId?: string | null;
-  onFurnitureSelect?: (id: string | null) => void;
   onFurnitureChange?: (furniture: FurnitureInstance) => void;
   doors?: Door[];
   selectedDoorId?: string | null;
-  onDoorSelect?: (id: string | null) => void;
   onDoorChange?: (door: Door) => void;
   isDoorPlacementMode?: boolean;
   onWallSegmentClick?: (segmentIndex: number, positionOnSegment: number) => void;
   onDoorDragStart?: (doorId: string, x: number, y: number) => void;
   onDoorDragMove?: (x: number, y: number) => void;
   onDoorDragEnd?: () => void;
+  zones?: Zone[];
+  selectedZoneId?: string | null;
+  onZoneChange?: (zone: Zone) => void;
+  onZoneVertexDrag?: (zoneId: string, vertexIndex: number, pos: { x: number; y: number }) => void;
+  showZones?: boolean;
   roomShellFillMode?: 'overlay' | 'material';
   floorMaterial?: string;
   // Visibility toggles
@@ -319,6 +334,7 @@ export const RoomCanvas: React.FC<RoomCanvasProps> = ({
   zoom = 1,
   devicePlacement,
   onDeviceChange,
+  onItemSelect,
   fieldOfViewDeg = 120,
   maxRangeMeters = 6,
   deviceIconUrl,
@@ -340,17 +356,19 @@ export const RoomCanvas: React.FC<RoomCanvasProps> = ({
   lockShell = false,
   furniture = [],
   selectedFurnitureId,
-  onFurnitureSelect,
   onFurnitureChange,
   doors = [],
   selectedDoorId,
-  onDoorSelect,
   onDoorChange,
   isDoorPlacementMode,
   onWallSegmentClick,
   onDoorDragStart,
   onDoorDragMove,
   onDoorDragEnd,
+  zones = [],
+  selectedZoneId,
+  onZoneChange,
+  showZones = true,
   roomShellFillMode = 'overlay',
   floorMaterial = 'none',
   showWalls = true,
@@ -379,23 +397,7 @@ export const RoomCanvas: React.FC<RoomCanvasProps> = ({
   const [dragIdx, setDragIdx] = useState<number | null>(null);
   const [dragDevice, setDragDevice] = useState<boolean>(false);
   const [panDrag, setPanDrag] = useState<{ start: Point; base: { x: number; y: number } } | null>(null);
-  const [furnitureDrag, setFurnitureDrag] = useState<{ id: string; start: Point; basePos: Point; currentPos?: Point } | null>(null);
-  const [furnitureResize, setFurnitureResize] = useState<{
-    id: string;
-    corner: 'nw' | 'ne' | 'sw' | 'se';
-    start: Point;
-    baseSize: { width: number; depth: number };
-    basePos: Point;
-    currentSize?: { width: number; depth: number };
-    currentPos?: Point;
-  } | null>(null);
-  const [furnitureRotate, setFurnitureRotate] = useState<{
-    id: string;
-    start: Point;
-    centerPos: Point;
-    baseRotation: number;
-    currentRotation?: number;
-  } | null>(null);
+  const [activeDrag, setActiveDrag] = useState<ActiveDrag>(null);
   const suppressClickRef = useRef<boolean>(false);
 
   const effectiveRangeMm = Number.isFinite(rangeMm) && rangeMm > 0 ? rangeMm : 6000;
@@ -403,6 +405,48 @@ export const RoomCanvas: React.FC<RoomCanvasProps> = ({
   const effectiveFov = Number.isFinite(fieldOfViewDeg) ? fieldOfViewDeg : 120;
   const effectiveMaxRange = Number.isFinite(maxRangeMeters) ? maxRangeMeters : 6;
   const effectiveSnap = Number.isFinite(snapGridMm) && snapGridMm > 0 ? snapGridMm : 0;
+
+  // Helper: check if a world-coordinate point is within the sensor's detection cone
+  const isPointInSensorRange = useCallback((pt: Point): boolean => {
+    if (!devicePlacement) return true; // no sensor placed → assume in range
+    const dx = pt.x - safePlacement.x;
+    const dy = pt.y - safePlacement.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    const rangeLimit = effectiveMaxRange * 1000; // meters → mm
+    if (dist > rangeLimit) return false;
+    // Check field of view angle
+    const rotationRad = (((safePlacement.rotationDeg ?? 0) + 90) * Math.PI) / 180;
+    const halfFov = (effectiveFov * Math.PI) / 360;
+    const ptAngle = Math.atan2(dy, dx);
+    // Normalize angle difference to [-PI, PI]
+    let diff = ptAngle - rotationRad;
+    while (diff > Math.PI) diff -= 2 * Math.PI;
+    while (diff < -Math.PI) diff += 2 * Math.PI;
+    return Math.abs(diff) <= halfFov;
+  }, [devicePlacement, safePlacement.x, safePlacement.y, safePlacement.rotationDeg, effectiveMaxRange, effectiveFov]);
+
+  // Helper: compute zone coverage status ('full' | 'partial' | 'none')
+  const getZoneCoverage = useCallback((zone: Zone): 'full' | 'partial' | 'none' => {
+    if (!devicePlacement) return 'full';
+    let verts: Point[];
+    if (isZonePolygon(zone)) {
+      verts = zone.vertices;
+    } else {
+      const r = zone as ZoneRect;
+      const hw = r.width / 2, hh = r.height / 2;
+      verts = [
+        { x: r.x - hw, y: r.y - hh },
+        { x: r.x + hw, y: r.y - hh },
+        { x: r.x + hw, y: r.y + hh },
+        { x: r.x - hw, y: r.y + hh },
+      ];
+    }
+    const inRange = verts.filter(isPointInSensorRange);
+    if (inRange.length === verts.length) return 'full';
+    if (inRange.length === 0) return 'none';
+    return 'partial';
+  }, [devicePlacement, isPointInSensorRange]);
+
   const effectiveZoom = Math.min(5, Math.max(0.1, Number.isFinite(zoom) ? zoom : 1));
   const viewSize = CANVAS_SIZE / effectiveZoom;
   const viewMin = (CANVAS_SIZE - viewSize) / 2;
@@ -461,68 +505,33 @@ export const RoomCanvas: React.FC<RoomCanvasProps> = ({
   };
 
   const handleDragStart = (idx: number) => (e: React.MouseEvent<SVGCircleElement, MouseEvent>) => {
+    if (dragDevice) return; // Don't start wall drag while device is being dragged
     e.stopPropagation();
     if (e.cancelable) e.preventDefault();
     suppressClickRef.current = true;
     setDragIdx(idx);
     onDragStateChange?.(true);
   };
+  const canvasContext: CanvasContext = useMemo(() => ({
+    toCanvasCoord,
+    fromCanvasCoord,
+    snapPoint,
+    safePoints,
+    scale: CANVAS_SIZE / effectiveRangeMm,
+    onDragStateChange,
+    onItemSelect,
+    suppressClickRef,
+  }), [toCanvasCoord, fromCanvasCoord, snapPoint, safePoints, effectiveRangeMm, onDragStateChange, onItemSelect]);
+
   const handleMouseUp = () => {
-    // Finalize furniture drag
-    if (furnitureDrag && onFurnitureChange) {
-      const furnitureItem = furniture.find((f) => f.id === furnitureDrag.id);
-      if (furnitureItem) {
-        // Use currentPos if it exists (was dragged), otherwise use basePos (just clicked)
-        const finalPos = furnitureDrag.currentPos || furnitureDrag.basePos;
-        onFurnitureChange({
-          ...furnitureItem,
-          x: finalPos.x,
-          y: finalPos.y,
-        });
+    // Finalize furniture/zone drag via renderers
+    if (activeDrag) {
+      const mode = activeDrag.mode;
+      if (mode.startsWith('furniture-') && onFurnitureChange) {
+        furnitureRenderer.onDragEnd(activeDrag as FurnitureDrag, furniture, onFurnitureChange, canvasContext);
       }
-      setFurnitureDrag(null);
-    }
-
-    // Finalize furniture resize
-    if (furnitureResize && onFurnitureChange) {
-      const furnitureItem = furniture.find((f) => f.id === furnitureResize.id);
-      if (furnitureItem) {
-        const finalSize = furnitureResize.currentSize || furnitureResize.baseSize;
-        const finalPos = furnitureResize.currentPos || furnitureResize.basePos;
-        onFurnitureChange({
-          ...furnitureItem,
-          width: finalSize.width,
-          depth: finalSize.depth,
-          x: finalPos.x,
-          y: finalPos.y,
-        });
-      }
-      setFurnitureResize(null);
-    }
-
-    // Finalize furniture rotation
-    if (furnitureRotate && onFurnitureChange) {
-      const furnitureItem = furniture.find((f) => f.id === furnitureRotate.id);
-      if (furnitureItem) {
-        const finalRotation = furnitureRotate.currentRotation !== undefined ? furnitureRotate.currentRotation : furnitureRotate.baseRotation;
-
-        // After rotation, check if furniture corners go outside and adjust position if needed
-        const constrainedPos = constrainFurnitureToPolygon(
-          { x: furnitureItem.x, y: furnitureItem.y },
-          furnitureItem.width,
-          furnitureItem.depth,
-          finalRotation,
-          safePoints
-        );
-
-        onFurnitureChange({
-          ...furnitureItem,
-          rotationDeg: finalRotation,
-          x: constrainedPos.x,
-          y: constrainedPos.y,
-        });
-      }
-      setFurnitureRotate(null);
+      // Zone drags apply changes during move, nothing to finalize
+      setActiveDrag(null);
     }
 
     setDragIdx(null);
@@ -549,125 +558,18 @@ export const RoomCanvas: React.FC<RoomCanvasProps> = ({
       return;
     }
 
-    // Handle furniture dragging
-    if (furnitureDrag && onFurnitureChange) {
-      suppressClickRef.current = true;
-      const furnitureItem = furniture.find((f) => f.id === furnitureDrag.id);
-      if (!furnitureItem) return;
-
-      const dx = pt.x - furnitureDrag.start.x;
-      const dy = pt.y - furnitureDrag.start.y;
-      const newPos = {
-        x: furnitureDrag.basePos.x + dx,
-        y: furnitureDrag.basePos.y + dy,
-      };
-      const snapped = snapPoint(newPos);
-
-      // Constrain furniture to stay entirely within room walls (accounting for size and rotation)
-      const constrained = constrainFurnitureToPolygon(
-        snapped,
-        furnitureItem.width,
-        furnitureItem.depth,
-        furnitureItem.rotationDeg,
-        safePoints
-      );
-
-      // Update the drag state with new position (keep basePos constant!)
-      setFurnitureDrag({ ...furnitureDrag, currentPos: constrained });
-      return;
-    }
-
-    // Handle furniture resizing
-    if (furnitureResize && onFurnitureChange) {
-      suppressClickRef.current = true;
-      const furnitureItem = furniture.find((f) => f.id === furnitureResize.id);
-      if (!furnitureItem) return;
-
-      const dx = pt.x - furnitureResize.start.x;
-      const dy = pt.y - furnitureResize.start.y;
-
-      let newWidth = furnitureResize.baseSize.width;
-      let newDepth = furnitureResize.baseSize.depth;
-      let newX = furnitureResize.basePos.x;
-      let newY = furnitureResize.basePos.y;
-
-      // Calculate new size based on corner being dragged
-      switch (furnitureResize.corner) {
-        case 'se': // Bottom-right: increase width/depth with positive dx/dy
-          newWidth = Math.max(100, furnitureResize.baseSize.width + dx);
-          newDepth = Math.max(100, furnitureResize.baseSize.depth + dy);
-          break;
-        case 'sw': // Bottom-left: decrease width with positive dx, increase depth with positive dy
-          newWidth = Math.max(100, furnitureResize.baseSize.width - dx);
-          newDepth = Math.max(100, furnitureResize.baseSize.depth + dy);
-          newX = furnitureResize.basePos.x + dx / 2;
-          break;
-        case 'ne': // Top-right: increase width, decrease depth
-          newWidth = Math.max(100, furnitureResize.baseSize.width + dx);
-          newDepth = Math.max(100, furnitureResize.baseSize.depth - dy);
-          newY = furnitureResize.basePos.y + dy / 2;
-          break;
-        case 'nw': // Top-left: decrease both
-          newWidth = Math.max(100, furnitureResize.baseSize.width - dx);
-          newDepth = Math.max(100, furnitureResize.baseSize.depth - dy);
-          newX = furnitureResize.basePos.x + dx / 2;
-          newY = furnitureResize.basePos.y + dy / 2;
-          break;
+    // Handle furniture/zone dragging via renderers
+    if (activeDrag) {
+      const mode = activeDrag.mode;
+      if (mode.startsWith('furniture-')) {
+        const updated = furnitureRenderer.onDragMove(pt, activeDrag as FurnitureDrag, furniture, canvasContext);
+        setActiveDrag(updated);
+        return;
       }
-
-      // Apply aspect ratio lock if enabled
-      if (furnitureItem.aspectRatioLocked && furnitureResize.baseSize.depth > 0) {
-        const aspectRatio = furnitureResize.baseSize.width / furnitureResize.baseSize.depth;
-        newDepth = newWidth / aspectRatio;
-
-        // Adjust position based on corner to keep opposite corner fixed
-        if (furnitureResize.corner === 'sw' || furnitureResize.corner === 'nw') {
-          const widthChange = newWidth - furnitureResize.baseSize.width;
-          newX = furnitureResize.basePos.x - widthChange / 2;
-        }
-        if (furnitureResize.corner === 'ne' || furnitureResize.corner === 'nw') {
-          const depthChange = newDepth - furnitureResize.baseSize.depth;
-          newY = furnitureResize.basePos.y - depthChange / 2;
-        }
+      if (mode.startsWith('zone-')) {
+        zoneRenderer.onDragMove(pt, activeDrag as ZoneDrag, zones, canvasContext, onZoneChange);
+        return;
       }
-
-      // Constrain the furniture to stay entirely within room walls (using new dimensions)
-      const constrainedPos = constrainFurnitureToPolygon(
-        { x: newX, y: newY },
-        newWidth,
-        newDepth,
-        furnitureItem.rotationDeg,
-        safePoints
-      );
-
-      setFurnitureResize({
-        ...furnitureResize,
-        currentSize: { width: newWidth, depth: newDepth },
-        currentPos: constrainedPos,
-      });
-      return;
-    }
-
-    // Handle furniture rotation
-    if (furnitureRotate) {
-      suppressClickRef.current = true;
-      // Calculate angle from center to current mouse position
-      const dx = pt.x - furnitureRotate.centerPos.x;
-      const dy = pt.y - furnitureRotate.centerPos.y;
-      const angleRad = Math.atan2(dx, -dy); // -dy because canvas Y increases downward
-      let angleDeg = (angleRad * 180) / Math.PI;
-
-      // Normalize to 0-360
-      if (angleDeg < 0) angleDeg += 360;
-
-      // Snap to 15 degree increments if shift key is held (we don't have access to shift key here, so always snap to 15)
-      angleDeg = Math.round(angleDeg / 15) * 15;
-
-      setFurnitureRotate({
-        ...furnitureRotate,
-        currentRotation: angleDeg,
-      });
-      return;
     }
 
     if (dragIdx === null && !dragDevice) return;
@@ -677,13 +579,14 @@ export const RoomCanvas: React.FC<RoomCanvasProps> = ({
       onChange(next);
     } else if (dragDevice && onDeviceChange) {
       const snapped = snapPoint(pt);
-      // Only allow device placement inside the room outline
-      if (isPointInPolygon(snapped, safePoints)) {
-        onDeviceChange({
-          ...safePlacement,
-          ...snapped,
-        });
-      }
+      // Clamp device position to stay inside the room outline
+      const clamped = safePoints.length >= 3
+        ? constrainPointToPolygon(snapped, safePoints)
+        : snapped;
+      onDeviceChange({
+        ...safePlacement,
+        ...clamped,
+      });
     }
   };
 
@@ -1052,8 +955,20 @@ export const RoomCanvas: React.FC<RoomCanvasProps> = ({
           // Calculate arc for a 90-degree door swing
           // The arc traces the path of the door's free end (opposite from hinge)
 
-          // Negative Y is "into the room" (up in SVG coords), positive Y is "out" (down)
-          const arcDirection = door.swingDirection === 'in' ? -1 : 1;
+          // Determine which side of the wall segment the room interior is.
+          // Use the cross product of the segment direction with the vector from
+          // segment start to the room centroid. In the wall's local coordinate
+          // frame (after rotation), positive cross product means the centroid is
+          // on the positive-Y side, negative means negative-Y side.
+          const centroidX = safePoints.reduce((s, p) => s + p.x, 0) / safePoints.length;
+          const centroidY = safePoints.reduce((s, p) => s + p.y, 0) / safePoints.length;
+          const toCentroidX = centroidX - doorX;
+          const toCentroidY = centroidY - doorY;
+          // Cross product: seg × toCentroid  (positive = centroid is on +Y side in local frame)
+          const cross = dx * toCentroidY - dy * toCentroidX;
+          // inwardSign: the local-Y direction that points into the room
+          const inwardSign = cross >= 0 ? 1 : -1;
+          const arcDirection = door.swingDirection === 'in' ? inwardSign : -inwardSign;
 
           // The arc goes from closed position (along wall) to open position (perpendicular)
           // Start: FREE end of door when closed (opposite from hinge, along x-axis)
@@ -1068,14 +983,14 @@ export const RoomCanvas: React.FC<RoomCanvasProps> = ({
           // Determine which arc to draw (0 = short 90° arc, 1 = long arc)
           const largeArcFlag = 0;
 
-          // Sweep flag: 1 = clockwise, 0 = counterclockwise (in SVG coords where Y increases downward)
-          // For a concave arc (curving toward the hinge/center):
-          // - Left hinge, swinging in (negative Y): sweep counterclockwise (0)
-          // - Left hinge, swinging out (positive Y): sweep clockwise (1)
-          // - Right hinge, swinging in (negative Y): sweep clockwise (1)
-          // - Right hinge, swinging out (positive Y): sweep counterclockwise (0)
-          const sweepFlag = (door.swingSide === 'left' && door.swingDirection === 'in') ||
-                            (door.swingSide === 'right' && door.swingDirection === 'out') ? 0 : 1;
+          // Sweep flag depends on hinge side and actual arc direction (not hardcoded in/out).
+          // We need the arc to curve toward the hinge (concave arc).
+          // In SVG coords: sweep 1 = clockwise, 0 = counterclockwise.
+          // Left hinge + arcDirection>0 (positive Y): clockwise (1)
+          // Left hinge + arcDirection<0 (negative Y): counterclockwise (0)
+          // Right hinge + arcDirection>0 (positive Y): counterclockwise (0)
+          // Right hinge + arcDirection<0 (negative Y): clockwise (1)
+          const sweepFlag = (door.swingSide === 'left') === (arcDirection > 0) ? 1 : 0;
 
           return (
             <g key={door.id}>
@@ -1104,17 +1019,17 @@ export const RoomCanvas: React.FC<RoomCanvasProps> = ({
                   width={canvasDoorWidth + 20}
                   height={Math.abs(arcEndY) + 30}
                   fill="transparent"
-                  style={{ cursor: isSelected ? 'grab' : 'pointer' }}
+                  style={{ cursor: onDoorDragStart ? (isSelected ? 'grab' : 'pointer') : 'pointer' }}
                   onMouseDown={(e) => {
                     e.stopPropagation();
                     suppressClickRef.current = false;
 
-                    // Select the door
-                    onDoorSelect?.(door.id);
+                    // Select the door (always works)
+                    onItemSelect?.('door', door.id);
 
-                    // Start dragging if selected
-                    if (isSelected) {
-                      onDoorDragStart?.(door.id, doorX, doorY);
+                    // Start dragging only if in doors mode and already selected
+                    if (isSelected && onDoorDragStart) {
+                      onDoorDragStart(door.id, doorX, doorY);
                       onDragStateChange?.(true);
                     }
                   }}
@@ -1172,165 +1087,34 @@ export const RoomCanvas: React.FC<RoomCanvasProps> = ({
           );
         })}
 
-        {/* Render furniture */}
-        {showFurniture && furniture.map((item) => {
-          // Use dragging position if this furniture is being dragged
-          const isDragging = furnitureDrag?.id === item.id;
-          const isResizing = furnitureResize?.id === item.id;
-          const isRotating = furnitureRotate?.id === item.id;
+        {/* Render furniture (via renderer) */}
+        {showFurniture && furnitureRenderer.render(
+          furniture,
+          selectedFurnitureId ?? null,
+          activeDrag?.mode.startsWith('furniture-') ? (activeDrag as FurnitureDrag) : null,
+          canvasContext,
+          { startDrag: (drag) => { setActiveDrag(drag); } },
+          CANVAS_SIZE,
+          effectiveRangeMm,
+          !!onFurnitureChange,
+          toWorldFromEvent,
+        )}
 
-          // Determine display position, size, and rotation
-          let displayPos = { x: item.x, y: item.y };
-          let displayWidth = item.width;
-          let displayDepth = item.depth;
-          let displayRotation = item.rotationDeg;
 
-          if (isDragging && furnitureDrag) {
-            displayPos = furnitureDrag.currentPos || furnitureDrag.basePos;
-          } else if (isResizing && furnitureResize) {
-            displayPos = furnitureResize.currentPos || furnitureResize.basePos;
-            const size = furnitureResize.currentSize || furnitureResize.baseSize;
-            displayWidth = size.width;
-            displayDepth = size.depth;
-          } else if (isRotating && furnitureRotate) {
-            displayRotation = furnitureRotate.currentRotation !== undefined ? furnitureRotate.currentRotation : furnitureRotate.baseRotation;
-          }
-
-          const displayX = displayPos.x;
-          const displayY = displayPos.y;
-
-          const canvasPos = toCanvasCoord({ x: displayX, y: displayY });
-          const canvasWidth = toCanvas(displayWidth, effectiveRangeMm);
-          const canvasHeight = toCanvas(displayDepth, effectiveRangeMm);
-          const isSelected = selectedFurnitureId === item.id;
-          const Icon = getFurnitureIcon(item.typeId);
-          const colors = getFurnitureColors(item.typeId, isSelected);
-
-          return (
-            <g key={item.id}>
-              {/* Main furniture group with transform */}
-              <g transform={`translate(${canvasPos.x}, ${canvasPos.y}) rotate(${displayRotation})`}>
-                {/* Furniture icon - render directly as SVG to fill bounds */}
-                {Icon && (
-                  <svg
-                    x={-canvasWidth / 2}
-                    y={-canvasHeight / 2}
-                    width={canvasWidth}
-                    height={canvasHeight}
-                    viewBox="0 0 100 100"
-                    preserveAspectRatio="none"
-                    style={{ overflow: 'visible', pointerEvents: 'none' }}
-                  >
-                    <Icon />
-                  </svg>
-                )}
-                {/* Clickable interaction rectangle - positioned over furniture */}
-                <rect
-                  x={-canvasWidth / 2}
-                  y={-canvasHeight / 2}
-                  width={canvasWidth}
-                  height={canvasHeight}
-                  fill="transparent"
-                  stroke={isSelected ? '#0ea5e9' : 'transparent'}
-                  strokeWidth={isSelected ? 2 : 0}
-                  strokeDasharray={isSelected ? '4 2' : undefined}
-                  rx={3}
-                  style={{ cursor: isDragging ? 'grabbing' : 'grab' }}
-                  onMouseDown={(e) => {
-                    e.stopPropagation();
-                    const worldPos = toWorldFromEvent(e as any);
-                    if (!worldPos) return;
-                    suppressClickRef.current = false;
-                    setFurnitureDrag({ id: item.id, start: worldPos, basePos: { x: item.x, y: item.y } });
-                    onDragStateChange?.(true);
-                    onFurnitureSelect?.(item.id);
-                  }}
-                />
-              </g>
-
-              {/* Resize handles (only when selected and not dragging/rotating) */}
-              {isSelected && !isDragging && !isResizing && !isRotating && (() => {
-                const handleSize = 8;
-                const handles: Array<{ corner: 'nw' | 'ne' | 'sw' | 'se'; x: number; y: number; cursor: string }> = [
-                  { corner: 'nw', x: -canvasWidth / 2, y: -canvasHeight / 2, cursor: 'nwse-resize' },
-                  { corner: 'ne', x: canvasWidth / 2, y: -canvasHeight / 2, cursor: 'nesw-resize' },
-                  { corner: 'sw', x: -canvasWidth / 2, y: canvasHeight / 2, cursor: 'nesw-resize' },
-                  { corner: 'se', x: canvasWidth / 2, y: canvasHeight / 2, cursor: 'nwse-resize' },
-                ];
-
-                return (
-                  <>
-                    {handles.map((handle) => (
-                      <rect
-                        key={handle.corner}
-                        x={handle.x - handleSize / 2}
-                        y={handle.y - handleSize / 2}
-                        width={handleSize}
-                        height={handleSize}
-                        fill="#0ea5e9"
-                        stroke="#ffffff"
-                        strokeWidth={1.5}
-                        rx={1}
-                        transform={`translate(${canvasPos.x}, ${canvasPos.y}) rotate(${displayRotation})`}
-                        style={{ transformOrigin: '0 0', cursor: handle.cursor }}
-                        onMouseDown={(e) => {
-                          e.stopPropagation();
-                          const worldPos = toWorldFromEvent(e as any);
-                          if (!worldPos) return;
-                          suppressClickRef.current = false;
-                          setFurnitureResize({
-                            id: item.id,
-                            corner: handle.corner,
-                            start: worldPos,
-                            baseSize: { width: item.width, depth: item.depth },
-                            basePos: { x: item.x, y: item.y },
-                          });
-                          onDragStateChange?.(true);
-                        }}
-                      />
-                    ))}
-                    {/* Rotation handle (at top center) */}
-                    <g transform={`translate(${canvasPos.x}, ${canvasPos.y}) rotate(${displayRotation})`}>
-                      {/* Line connecting to rotation handle */}
-                      <line
-                        x1={0}
-                        y1={-canvasHeight / 2}
-                        x2={0}
-                        y2={-canvasHeight / 2 - 20}
-                        stroke="#a855f7"
-                        strokeWidth={2}
-                        strokeDasharray="3 3"
-                      />
-                      {/* Rotation handle circle */}
-                      <circle
-                        cx={0}
-                        cy={-canvasHeight / 2 - 20}
-                        r={6}
-                        fill="#a855f7"
-                        stroke="#ffffff"
-                        strokeWidth={1.5}
-                        style={{ cursor: 'grab' }}
-                        onMouseDown={(e) => {
-                          e.stopPropagation();
-                          const worldPos = toWorldFromEvent(e as any);
-                          if (!worldPos) return;
-                          suppressClickRef.current = false;
-                          setFurnitureRotate({
-                            id: item.id,
-                            start: worldPos,
-                            centerPos: { x: item.x, y: item.y },
-                            baseRotation: item.rotationDeg,
-                          });
-                          onDragStateChange?.(true);
-                        }}
-                      />
-                    </g>
-                  </>
-                );
-              })()}
-            </g>
-          );
-        })}
+        {/* Render zones (via renderer) */}
+        {showZones && zoneRenderer.render(
+          zones,
+          selectedZoneId ?? null,
+          activeDrag?.mode.startsWith('zone-') ? (activeDrag as ZoneDrag) : null,
+          canvasContext,
+          { startDrag: (drag) => { setActiveDrag(drag); } },
+          CANVAS_SIZE,
+          effectiveRangeMm,
+          !!onZoneChange,
+          toWorldFromEvent,
+          getZoneCoverage,
+          onZoneChange,
+        )}
 
         {/* Build device element for non-interactive mode (Zone Editor) - passed to renderOverlay for z-order control */}
         {renderOverlay?.({
@@ -1657,8 +1441,10 @@ export const RoomCanvas: React.FC<RoomCanvasProps> = ({
                     y={py - iconSize / 2}
                     width={iconSize}
                     height={iconSize}
-                    style={{ cursor: 'grab', pointerEvents: 'all' }}
+                    style={{ cursor: onDeviceChange ? 'grab' : 'pointer', pointerEvents: 'all' }}
                     onMouseDown={() => {
+                      onItemSelect?.('device', 'device');
+                      if (!onDeviceChange) return;
                       setDragDevice(true);
                       onDragStateChange?.(true);
                     }}
@@ -1673,10 +1459,12 @@ export const RoomCanvas: React.FC<RoomCanvasProps> = ({
                       stroke="#1d4ed8"
                       strokeWidth={strokeW}
                       onMouseDown={() => {
+                        onItemSelect?.('device', 'device');
+                        if (!onDeviceChange) return;
                         setDragDevice(true);
                         onDragStateChange?.(true);
                       }}
-                      style={{ cursor: 'grab' }}
+                      style={{ cursor: onDeviceChange ? 'grab' : 'pointer' }}
                     />
                     <line
                       x1={px}

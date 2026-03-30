@@ -5,7 +5,7 @@ import type { IHaReadTransport } from '../ha/readTransport';
 import type { IHaWriteClient } from '../ha/writeClient';
 import { ZoneWriter } from '../ha/zoneWriter';
 import { ZoneReader } from '../ha/zoneReader';
-import { RoomConfig, ZonePolygon, EntityMappings } from '../domain/types';
+import { RoomConfig, ZoneRect, ZonePolygon, EntityMappings, isZoneRect } from '../domain/types';
 import { EntityResolver } from '../domain/entityResolver';
 import { deviceEntityService } from '../domain/deviceEntityService';
 import { deviceMappingStorage } from '../config/deviceMappingStorage';
@@ -630,6 +630,7 @@ export const createDevicesRouter = (deps: DevicesRouterDependencies): Router => 
     const profileId = (req.body?.profileId as string | undefined) ?? (req.body?.profile_id as string | undefined);
     const entityNamePrefix = (req.body?.entityNamePrefix as string | undefined) ?? (req.body?.entity_name_prefix as string | undefined);
     const zones = (req.body?.zones as RoomConfig['zones']) ?? [];
+    const rectZones: ZoneRect[] = zones.filter(isZoneRect);
     const entityMappings = req.body?.entityMappings as EntityMappings | undefined;
 
     if (!profileId) {
@@ -649,7 +650,7 @@ export const createDevicesRouter = (deps: DevicesRouterDependencies): Router => 
     }
 
     try {
-      const result = await zoneWriter.applyZones(zoneMap, zones, entityNamePrefix, entityMappings, deviceId);
+      const result = await zoneWriter.applyZones(zoneMap, rectZones, entityNamePrefix, entityMappings, deviceId);
       return res.json({ ok: result.ok, warnings: result.failures });
     } catch (error) {
       logger.error({ error }, 'Failed to apply zones');

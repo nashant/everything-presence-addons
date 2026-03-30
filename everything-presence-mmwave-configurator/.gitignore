@@ -2,3 +2,6 @@ node_modules/
 backend/dist/
 frontend/dist/
 .bg-shell/
+backend/.env
+backend/.data/
+.env

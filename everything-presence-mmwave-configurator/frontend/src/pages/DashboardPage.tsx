@@ -8,7 +8,6 @@ import { ThemeSwitcher } from '../components/ThemeSwitcher';
 interface DashboardPageProps {
   onNavigate?: (view: 'wizard' | 'zoneEditor' | 'roomBuilder' | 'settings' | 'liveTracking') => void;
   onRoomSelect?: (roomId: string, profileId: string | null) => void;
-  onAddDevice?: (roomId: string) => void;
 }
 
 interface DeviceInfo {
@@ -19,7 +18,6 @@ interface DeviceInfo {
 export const DashboardPage: React.FC<DashboardPageProps> = ({
   onNavigate,
   onRoomSelect,
-  onAddDevice,
 }) => {
   const [floors, setFloors] = useState<Floor[]>([]);
   const [rooms, setRooms] = useState<RoomConfig[]>([]);
@@ -406,7 +404,6 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
                     deviceName={getDeviceName(room.deviceId)}
                     onNavigate={onNavigate}
                     onRoomSelect={onRoomSelect}
-                    onAddDevice={onAddDevice}
                     onDelete={handleDeleteRoom}
                   />
                 ))}
@@ -437,7 +434,6 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
                 deviceName={getDeviceName(room.deviceId)}
                 onNavigate={onNavigate}
                 onRoomSelect={onRoomSelect}
-                onAddDevice={onAddDevice}
                 onDelete={handleDeleteRoom}
               />
             ))}
@@ -455,7 +451,6 @@ interface RoomCardProps {
   deviceName: string | null;
   onNavigate?: (view: 'wizard' | 'zoneEditor' | 'roomBuilder' | 'settings' | 'liveTracking') => void;
   onRoomSelect?: (roomId: string, profileId: string | null) => void;
-  onAddDevice?: (roomId: string) => void;
   onDelete?: (roomId: string) => void;
 }
 
@@ -464,17 +459,24 @@ const RoomCard: React.FC<RoomCardProps> = ({
   deviceName,
   onNavigate,
   onRoomSelect,
-  onAddDevice,
   onDelete,
 }) => {
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
   const hasDevice = Boolean(room.deviceId);
   const hasWalls = Boolean(room.roomShell?.points?.length);
   const zoneCount = room.zones?.length ?? 0;
 
-  const handleNavigate = (view: 'roomBuilder' | 'zoneEditor' | 'liveTracking') => {
+  const handleNavigate = (view: 'roomBuilder') => {
     onRoomSelect?.(room.id, room.profileId ?? null);
     onNavigate?.(view);
   };
+
+  // Reset confirm state after 3 seconds
+  useEffect(() => {
+    if (!confirmingDelete) return;
+    const timer = setTimeout(() => setConfirmingDelete(false), 3000);
+    return () => clearTimeout(timer);
+  }, [confirmingDelete]);
 
   return (
     <div className="glass-card p-4 space-y-3 group">
@@ -490,13 +492,31 @@ const RoomCard: React.FC<RoomCardProps> = ({
             <p className="text-xs text-amber-400/80 mt-0.5">No device linked</p>
           )}
         </div>
-        <button
-          onClick={() => onDelete?.(room.id)}
-          className="text-slate-600 hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100 text-sm"
-          title="Delete room"
-        >
-          🗑
-        </button>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={() => handleNavigate('roomBuilder')}
+            className="text-slate-600 hover:text-slate-300 transition-colors opacity-0 group-hover:opacity-100 text-sm"
+            title={hasWalls ? 'Edit room' : 'Draw walls'}
+          >
+            ✏️
+          </button>
+          {confirmingDelete ? (
+            <button
+              onClick={() => onDelete?.(room.id)}
+              className="text-xs font-medium text-red-400 hover:text-red-300 bg-red-500/15 border border-red-500/30 rounded px-1.5 py-0.5 transition-colors"
+            >
+              Delete?
+            </button>
+          ) : (
+            <button
+              onClick={() => setConfirmingDelete(true)}
+              className="text-slate-600 hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100 text-sm"
+              title="Delete room"
+            >
+              🗑
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Status badges */}
@@ -515,39 +535,6 @@ const RoomCard: React.FC<RoomCardProps> = ({
           <span className="px-2 py-0.5 text-xs rounded-full bg-blue-500/15 text-blue-400 border border-blue-500/20">
             {zoneCount} zone{zoneCount !== 1 ? 's' : ''}
           </span>
-        )}
-      </div>
-
-      {/* Actions */}
-      <div className="flex flex-wrap gap-2 pt-1">
-        <button
-          onClick={() => handleNavigate('roomBuilder')}
-          className="px-3 py-1.5 text-xs font-medium rounded-md bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition-colors"
-        >
-          {hasWalls ? '✏️ Edit Room' : '📐 Draw Walls'}
-        </button>
-        {hasDevice ? (
-          <>
-            <button
-              onClick={() => handleNavigate('zoneEditor')}
-              className="px-3 py-1.5 text-xs font-medium rounded-md bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition-colors"
-            >
-              📦 Zones
-            </button>
-            <button
-              onClick={() => handleNavigate('liveTracking')}
-              className="px-3 py-1.5 text-xs font-medium rounded-md bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition-colors"
-            >
-              📍 Live
-            </button>
-          </>
-        ) : (
-          <button
-            onClick={() => onAddDevice?.(room.id)}
-            className="px-3 py-1.5 text-xs font-medium rounded-md bg-aqua-500/20 hover:bg-aqua-500/30 text-aqua-400 border border-aqua-500/30 transition-colors"
-          >
-            + Add Device
-          </button>
         )}
       </div>
     </div>

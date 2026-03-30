@@ -1,13 +1,24 @@
 ##
 # EP Dev Stack — self-contained Home Assistant + mock devices + configurator
 #
-# Usage:
-#   docker compose -f dev/docker-compose.dev.yaml up
-#   docker compose -f dev/docker-compose.dev.yaml down -v
+# Two modes of operation:
+#
+#   1. Local dev (recommended — hot-reload backend + frontend on host):
+#      bash dev/scripts/dev-start.sh
+#
+#   2. Full-Docker (all services in containers, no hot-reload):
+#      docker compose -f dev/docker-compose.dev.yaml --profile full up
+#
+# By default (no profile), only infra services start (HA, MQTT, bootstrap,
+# mock-devices). The configurator requires --profile full.
+#
+# Teardown:
+#   docker compose -f dev/docker-compose.dev.yaml --profile full down -v
 #
 # The ha-bootstrap service automatically creates a dev user and writes
-# a long-lived access token to a shared volume. The configurator reads
-# it via HA_LONG_LIVED_TOKEN_FILE.
+# a long-lived access token to a shared volume. In full-Docker mode the
+# configurator reads it via HA_LONG_LIVED_TOKEN_FILE; in local-dev mode
+# the dev-start.sh script reads it and writes a backend/.env.
 ##
 
 volumes:
@@ -71,8 +82,9 @@ services:
     command: ["/bootstrap-ha.sh"]
     restart: "no"
 
-  # ---------- Configurator ----------
+  # ---------- Configurator (full-Docker mode only, requires --profile full) ----------
   configurator:
+    profiles: ["full"]
     build:
       context: ../everything-presence-mmwave-configurator
       dockerfile: Dockerfile

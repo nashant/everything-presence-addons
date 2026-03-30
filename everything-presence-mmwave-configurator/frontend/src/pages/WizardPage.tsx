@@ -1460,7 +1460,7 @@ export const WizardPage: React.FC<WizardPageProps> = ({
               displayUnits={units}
               doors={selectedRoom?.doors ?? []}
               selectedDoorId={selectedDoorId}
-              onDoorSelect={setSelectedDoorId}
+              onItemSelect={(_type, id) => setSelectedDoorId(id)}
               onDoorChange={handleDoorChange}
               isDoorPlacementMode={isDoorPlacementMode}
               onWallSegmentClick={handleWallSegmentClick}
@@ -1516,7 +1516,7 @@ export const WizardPage: React.FC<WizardPageProps> = ({
               showDoors={true}
               furniture={selectedRoom?.furniture ?? []}
               selectedFurnitureId={selectedFurnitureId}
-              onFurnitureSelect={(id) => {
+              onItemSelect={(_type, id) => {
                 setSelectedFurnitureId(id);
                 setShowFurnitureLibrary(false);
               }}

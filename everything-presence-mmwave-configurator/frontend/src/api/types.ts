@@ -289,7 +289,7 @@ export interface RoomConfig {
   deviceId?: string;
   profileId?: string;
   units: 'metric' | 'imperial';
-  zones: ZoneRect[];
+  zones: Zone[];
   entityMappings?: EntityMappings;  // NEW: Resolved entity IDs from discovery
   entityNamePrefix?: string;        // DEPRECATED: Legacy fallback
   roomShell?: RoomShell;

@@ -5,11 +5,11 @@
 
 ## Project Description
 
-Clean rewrite of the Everything Presence mmWave configurator with a room-first architecture. Instead of the current device-first wizard (pick device → discover entities → create room → place device), the flow becomes: create rooms first, then add sensors to them. Built fresh on upstream main — no code carried from M001–M004.
+Clean rewrite of the Everything Presence mmWave configurator with a room-first architecture. Instead of the current device-first wizard (pick device → discover entities → create room → place device), the flow becomes: create rooms first, then add sensors to them. Built fresh on upstream main — no prior code carried.
 
 ## Why This Milestone
 
-The device-first wizard conflates room creation with device setup. Every multi-sensor bug we fixed in M001–M004 was a symptom of this: sensors[0] hardcoded everywhere, placement defaults to {0,0} because the room doesn't exist yet, centroid-init refs compensating for wrong entry point, "Use existing" adding sensors with dummy placement then retroactively fixing it.
+The device-first wizard conflates room creation with device setup. Every multi-sensor bug in the old wizard was a symptom of this: sensors[0] hardcoded everywhere, placement defaults to {0,0} because the room doesn't exist yet, centroid-init refs compensating for wrong entry point, "Use existing" adding sensors with dummy placement then retroactively fixing it.
 
 A room-first architecture eliminates these problems by construction — the room (with outline) always exists before a sensor touches it.
 
@@ -55,7 +55,7 @@ To call this milestone complete, we must prove:
 
 - `everything-presence-mmwave-configurator/backend/src/` — 13.5k lines, Express server with HA transport abstraction, entity discovery, zone writer, device profiles
 - `everything-presence-mmwave-configurator/frontend/src/` — 27k lines, React app with RoomCanvas, ZoneCanvas, WizardPage (3.3k lines — the main problem), EntityDiscovery, furniture/floor systems
-- `feature/all-milestones-m001-m004` branch — reference for what M001–M004 built; do not merge, but can study patterns and decisions
+- `feature/all-milestones` branch — reference for what prior milestones built; do not merge, but can study patterns and decisions
 
 > See `.gsd/DECISIONS.md` for all architectural and pattern decisions — it is an append-only register; read it during planning, append to it during execution.
 
@@ -75,7 +75,7 @@ To call this milestone complete, we must prove:
 
 ### Out of Scope / Non-Goals
 
-- Room aggregation / MQTT room devices / template helpers (M002 S03–S08 territory — future milestone)
+- Room aggregation / MQTT room devices / template helpers (future milestone)
 - Firmware update UI
 - Heatmap functionality
 - Zone backup/restore

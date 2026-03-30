@@ -1,12 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useState, useRef } from 'react';
 import { fetchDevices, fetchProfiles, ingressAware } from '../api/client';
 import { fetchRooms, updateRoom } from '../api/rooms';
-import { RoomCanvas } from '../components/RoomCanvas';
-import { DiscoveredDevice, DeviceProfile, RoomConfig, LiveState, FurnitureInstance, FurnitureType, Door } from '../api/types';
+import { RoomCanvas, type CanvasItemType } from '../components/RoomCanvas';
+import { DiscoveredDevice, DeviceProfile, RoomConfig, LiveState, FurnitureInstance, FurnitureType, Door, Zone, ZoneRect, ZonePolygon, isZoneRect, isZonePolygon } from '../api/types';
 import { useWallDrawing } from '../hooks/useWallDrawing';
 import { FurnitureLibrary } from '../components/FurnitureLibrary';
 import { FurnitureEditor } from '../components/FurnitureEditor';
 import { DoorEditor } from '../components/DoorEditor';
+import { ZoneEditorPanel } from '../components/ZoneEditorPanel';
 import { DeviceEditor } from '../components/DeviceEditor';
 import { FLOOR_MATERIALS } from '../components/FloorMaterials';
 import { useDisplaySettings } from '../hooks/useDisplaySettings';
@@ -89,14 +90,19 @@ export const RoomBuilderPage: React.FC<RoomBuilderPageProps> = ({
     showWalls, setShowWalls,
     showFurniture, setShowFurniture,
     showDoors, setShowDoors,
+    showZones, setShowZones,
     showDeviceIcon, setShowDeviceIcon,
     showTargets, setShowTargets,
     clipRadarToWalls,
   } = useDisplaySettings();
   const [panOffsetMm, setPanOffsetMm] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [showFurnitureLibrary, setShowFurnitureLibrary] = useState(false);
-  const [selectedFurnitureId, setSelectedFurnitureId] = useState<string | null>(null);
-  const [selectedDoorId, setSelectedDoorId] = useState<string | null>(null);
+  const [selectedItem, setSelectedItem] = useState<{ type: 'furniture' | 'door' | 'zone' | 'device'; id: string } | null>(null);
+  // Derived selection IDs for backward compat with RoomCanvas props
+  const selectedFurnitureId = selectedItem?.type === 'furniture' ? selectedItem.id : null;
+  const selectedDoorId = selectedItem?.type === 'door' ? selectedItem.id : null;
+  const selectedZoneId = selectedItem?.type === 'zone' ? selectedItem.id : null;
+  const [zoneModeOverride, setZoneModeOverride] = useState<'rect' | 'polygon' | null>(null);
   const [isDoorPlacementMode, setIsDoorPlacementMode] = useState(false);
   const [doorDrag, setDoorDrag] = useState<{
     doorId: string;
@@ -238,7 +244,9 @@ export const RoomBuilderPage: React.FC<RoomBuilderPageProps> = ({
       });
     };
 
-    const center = selectedRoom.roomShell?.centroid ?? { x: 0, y: 0 };
+    const center = selectedRoom.roomShell?.points?.length
+      ? computeCentroid(selectedRoom.roomShell.points)
+      : { x: 0, y: 0 };
     const newFurniture: FurnitureInstance = {
       id: generateId(),
       typeId: furnitureType.id,
@@ -255,7 +263,7 @@ export const RoomBuilderPage: React.FC<RoomBuilderPageProps> = ({
       furniture: [...(selectedRoom.furniture ?? []), newFurniture],
     };
     setRooms((prev) => prev.map((r) => (r.id === selectedRoom.id ? updated : r)));
-    setSelectedFurnitureId(newFurniture.id);
+    setSelectedItem({ type: 'furniture', id: newFurniture.id });
     setShowFurnitureLibrary(false);
   }, [selectedRoom]);
 
@@ -275,7 +283,7 @@ export const RoomBuilderPage: React.FC<RoomBuilderPageProps> = ({
       furniture: (selectedRoom.furniture ?? []).filter((f) => f.id !== selectedFurnitureId),
     };
     setRooms((prev) => prev.map((r) => (r.id === selectedRoom.id ? updated : r)));
-    setSelectedFurnitureId(null);
+    setSelectedItem(null);
   }, [selectedRoom, selectedFurnitureId]);
 
   const handleAddDoor = useCallback(() => {
@@ -288,8 +296,7 @@ export const RoomBuilderPage: React.FC<RoomBuilderPageProps> = ({
     setIsDoorPlacementMode((prev) => !prev);
     if (!isDoorPlacementMode) {
       // Entering placement mode - deselect everything
-      setSelectedDoorId(null);
-      setSelectedFurnitureId(null);
+      setSelectedItem(null);
       setSelectedSegment(null);
     }
   }, [selectedRoom, isDoorPlacementMode]);
@@ -310,8 +317,148 @@ export const RoomBuilderPage: React.FC<RoomBuilderPageProps> = ({
       doors: (selectedRoom.doors ?? []).filter((d) => d.id !== selectedDoorId),
     };
     setRooms((prev) => prev.map((r) => (r.id === selectedRoom.id ? updated : r)));
-    setSelectedDoorId(null);
+    setSelectedItem(null);
   }, [selectedRoom, selectedDoorId]);
+
+  // Room-level zone mode: derived from existing zones, or user override when empty
+  const zoneMode: 'rect' | 'polygon' = useMemo(() => {
+    const zones = selectedRoom?.zones ?? [];
+    if (zones.length === 0) return zoneModeOverride ?? 'rect';
+    return isZonePolygon(zones[0]) ? 'polygon' : 'rect';
+  }, [selectedRoom?.zones, zoneModeOverride]);
+
+  // Zone handlers
+  const handleAddZone = useCallback(() => {
+    if (!selectedRoom) return;
+    const center = selectedRoom.roomShell?.points?.length
+      ? computeCentroid(selectedRoom.roomShell.points)
+      : { x: 0, y: 0 };
+    const id = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : `zone-${Date.now()}`;
+    const label = `Zone ${(selectedRoom.zones?.length ?? 0) + 1}`;
+    const newZone: Zone = zoneMode === 'polygon'
+      ? {
+          id, type: 'regular', enabled: true, label,
+          vertices: [
+            { x: center.x - 500, y: center.y - 500 },
+            { x: center.x + 500, y: center.y - 500 },
+            { x: center.x + 500, y: center.y + 500 },
+            { x: center.x - 500, y: center.y + 500 },
+          ],
+        } as ZonePolygon
+      : {
+          id, type: 'regular', x: center.x, y: center.y,
+          width: 1000, height: 1000, enabled: true, label,
+        } as ZoneRect;
+    const updated: RoomConfig = {
+      ...selectedRoom,
+      zones: [...(selectedRoom.zones ?? []), newZone],
+    };
+    setRooms((prev) => prev.map((r) => (r.id === selectedRoom.id ? updated : r)));
+    setSelectedItem({ type: 'zone', id: newZone.id });
+  }, [selectedRoom, zoneMode]);
+
+  const handleZoneChange = useCallback((updatedZone: Zone) => {
+    if (!selectedRoom) return;
+    const updated: RoomConfig = {
+      ...selectedRoom,
+      zones: (selectedRoom.zones ?? []).map((z) => (z.id === updatedZone.id ? updatedZone : z)),
+    };
+    setRooms((prev) => prev.map((r) => (r.id === selectedRoom.id ? updated : r)));
+  }, [selectedRoom]);
+
+  const handleZoneDelete = useCallback(() => {
+    if (!selectedRoom || !selectedZoneId) return;
+    const updated: RoomConfig = {
+      ...selectedRoom,
+      zones: (selectedRoom.zones ?? []).filter((z) => z.id !== selectedZoneId),
+    };
+    setRooms((prev) => prev.map((r) => (r.id === selectedRoom.id ? updated : r)));
+    setSelectedItem(null);
+  }, [selectedRoom, selectedZoneId]);
+
+  const handleSetZoneMode = useCallback((mode: 'rect' | 'polygon') => {
+    if (!selectedRoom) return;
+    setZoneModeOverride(mode);
+    const zones = selectedRoom.zones ?? [];
+    if (zones.length === 0) return; // no zones to convert — override already stored
+    const converted: Zone[] = zones.map((zone) => {
+      if (mode === 'polygon' && isZoneRect(zone)) {
+        const halfW = zone.width / 2;
+        const halfH = zone.height / 2;
+        return {
+          id: zone.id, type: zone.type, enabled: zone.enabled, label: zone.label,
+          vertices: [
+            { x: zone.x - halfW, y: zone.y - halfH },
+            { x: zone.x + halfW, y: zone.y - halfH },
+            { x: zone.x + halfW, y: zone.y + halfH },
+            { x: zone.x - halfW, y: zone.y + halfH },
+          ],
+        } as ZonePolygon;
+      }
+      if (mode === 'rect' && isZonePolygon(zone)) {
+        const xs = zone.vertices.map((v) => v.x);
+        const ys = zone.vertices.map((v) => v.y);
+        const minX = Math.min(...xs), maxX = Math.max(...xs);
+        const minY = Math.min(...ys), maxY = Math.max(...ys);
+        return {
+          id: zone.id, type: zone.type, enabled: zone.enabled, label: zone.label,
+          x: (minX + maxX) / 2, y: (minY + maxY) / 2,
+          width: maxX - minX, height: maxY - minY,
+        } as ZoneRect;
+      }
+      return zone; // already correct type
+    });
+    const updated: RoomConfig = { ...selectedRoom, zones: converted };
+    setRooms((prev) => prev.map((r) => (r.id === selectedRoom.id ? updated : r)));
+  }, [selectedRoom]);
+
+  const handleDeleteZoneVertex = useCallback((index: number) => {
+    if (!selectedRoom || !selectedZoneId) return;
+    const zone = selectedRoom.zones?.find((z) => z.id === selectedZoneId);
+    if (!zone || !isZonePolygon(zone) || zone.vertices.length <= 3) return;
+    const newVerts = zone.vertices.filter((_, i) => i !== index);
+    handleZoneChange({ ...zone, vertices: newVerts });
+  }, [selectedRoom, selectedZoneId, handleZoneChange]);
+
+  const selectedZone = useMemo(
+    () => selectedZoneId ? selectedRoom?.zones?.find((z) => z.id === selectedZoneId) ?? null : null,
+    [selectedZoneId, selectedRoom?.zones],
+  );
+
+  // Compute zone coverage for the selected zone relative to the sensor's detection cone
+  const selectedZoneCoverage = useMemo((): 'full' | 'partial' | 'none' => {
+    if (!selectedZone || !selectedRoom?.devicePlacement) return 'full';
+    const dp = selectedRoom.devicePlacement;
+    const maxRange = (selectedProfile?.limits?.maxRangeMeters ?? 6) * 1000; // mm
+    const fovDeg = selectedProfile?.limits?.fieldOfViewDegrees ?? 120;
+    const rotRad = (((dp.rotationDeg ?? 0) + 90) * Math.PI) / 180;
+    const halfFov = (fovDeg * Math.PI) / 360;
+
+    const isInRange = (pt: { x: number; y: number }) => {
+      const dx = pt.x - dp.x, dy = pt.y - dp.y;
+      if (Math.sqrt(dx * dx + dy * dy) > maxRange) return false;
+      let diff = Math.atan2(dy, dx) - rotRad;
+      while (diff > Math.PI) diff -= 2 * Math.PI;
+      while (diff < -Math.PI) diff += 2 * Math.PI;
+      return Math.abs(diff) <= halfFov;
+    };
+
+    let verts: { x: number; y: number }[];
+    if (isZonePolygon(selectedZone)) {
+      verts = selectedZone.vertices;
+    } else {
+      const r = selectedZone as ZoneRect;
+      const hw = r.width / 2, hh = r.height / 2;
+      verts = [
+        { x: r.x - hw, y: r.y - hh }, { x: r.x + hw, y: r.y - hh },
+        { x: r.x + hw, y: r.y + hh }, { x: r.x - hw, y: r.y + hh },
+      ];
+    }
+    const count = verts.filter(isInRange).length;
+    if (count === verts.length) return 'full';
+    if (count === 0) return 'none';
+    return 'partial';
+  }, [selectedZone, selectedRoom?.devicePlacement, selectedProfile?.limits]);
 
   // Helper to generate UUID
   const generateId = () => {
@@ -342,7 +489,7 @@ export const RoomBuilderPage: React.FC<RoomBuilderPageProps> = ({
       doors: [...(selectedRoom.doors ?? []), newDoor],
     };
     setRooms((prev) => prev.map((r) => (r.id === selectedRoom.id ? updated : r)));
-    setSelectedDoorId(newDoor.id);
+    setSelectedItem({ type: 'door', id: newDoor.id });
     setIsDoorPlacementMode(false); // Exit placement mode after placing
   }, [selectedRoom, isDoorPlacementMode]);
 
@@ -538,28 +685,50 @@ export const RoomBuilderPage: React.FC<RoomBuilderPageProps> = ({
         stopDrawing();
         return;
       }
-      if (e.key === 'a' || e.key === 'A') {
-        e.preventDefault();
-        setIsDrawingWall((prev) => !prev);
-        return;
-      }
-      if (e.key === 'Enter') {
-        if (isDrawingWall) {
+
+      // Wall-only shortcuts: only when Walls section is active
+      if (activeSection === 'walls' || activeSection === null) {
+        if (e.key === 'a' || e.key === 'A') {
           e.preventDefault();
-          handleCloseLoop();
+          setIsDrawingWall((prev) => !prev);
+          return;
         }
-        return;
+        if (e.key === 'Enter') {
+          if (isDrawingWall) {
+            e.preventDefault();
+            handleCloseLoop();
+          }
+          return;
+        }
       }
+
       if (e.key === 'Backspace' || e.key === 'Delete') {
-        if (selectedRoom?.roomShell?.points?.length) {
+        // Scoped delete: only affect the currently active entity type
+        if (selectedFurnitureId && (activeSection === 'furniture' || activeSection === null)) {
+          e.preventDefault();
+          handleFurnitureDelete();
+          return;
+        }
+        if (selectedDoorId && (activeSection === 'doors' || activeSection === null)) {
+          e.preventDefault();
+          handleDoorDelete();
+          return;
+        }
+        if (selectedZoneId && (activeSection === 'zones' || activeSection === null)) {
+          e.preventDefault();
+          handleZoneDelete();
+          return;
+        }
+        if (activeSection === 'walls' && selectedRoom?.roomShell?.points?.length) {
           e.preventDefault();
           removeLastPoint();
+          return;
         }
       }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [isDrawingWall, selectedRoom?.roomShell?.points, stopDrawing, setIsDrawingWall, removeLastPoint]);
+  }, [isDrawingWall, selectedRoom?.roomShell?.points, stopDrawing, setIsDrawingWall, removeLastPoint, activeSection, selectedFurnitureId, selectedDoorId, selectedZoneId, handleFurnitureDelete, handleDoorDelete, handleZoneDelete]);
 
   const handleAddPoint = (p: { x: number; y: number }) => {
     if (!selectedRoom) return;
@@ -813,8 +982,17 @@ export const RoomBuilderPage: React.FC<RoomBuilderPageProps> = ({
     if (!selectedRoom) return;
     setSaving(true);
     try {
-      const result = await updateRoom(selectedRoom.id, selectedRoom);
-      setRooms((prev) => prev.map((r) => (r.id === selectedRoom.id ? result.room : r)));
+      // Always compute centroid before saving so it persists in the backend
+      const roomToSave = selectedRoom.roomShell?.points?.length
+        ? { ...selectedRoom, roomShell: { ...selectedRoom.roomShell, centroid: computeCentroid(selectedRoom.roomShell.points) } }
+        : selectedRoom;
+      const result = await updateRoom(roomToSave.id, roomToSave);
+      // Backfill centroid on the response in case the server stripped it
+      const saved = result.room;
+      if (saved.roomShell?.points?.length && !saved.roomShell.centroid) {
+        saved.roomShell.centroid = computeCentroid(saved.roomShell.points);
+      }
+      setRooms((prev) => prev.map((r) => (r.id === selectedRoom.id ? saved : r)));
       onWizardProgress?.({ outlineDone: true, placementDone: true });
       setError(null);
       setShowSavedModal(true);
@@ -891,11 +1069,12 @@ export const RoomBuilderPage: React.FC<RoomBuilderPageProps> = ({
   const wallCount = selectedRoom?.roomShell?.points?.length ?? 0;
   const doorCount = selectedRoom?.doors?.length ?? 0;
   const furnitureCount = selectedRoom?.furniture?.length ?? 0;
+  const zoneCount = selectedRoom?.zones?.length ?? 0;
 
   const sidebarSections: SectionDef[] = [
-    { id: 'walls', icon: '🧱', label: 'Walls', badge: wallCount > 0 ? `${wallCount}` : undefined },
     { id: 'devices', icon: '📡', label: 'Devices', badge: hasDevice ? '1' : undefined },
-    { id: 'zones', icon: '📐', label: 'Zones', disabled: !hasDevice, disabledHint: 'Add a device first' },
+    { id: 'zones', icon: '📐', label: 'Zones', badge: zoneCount > 0 ? `${zoneCount}` : undefined },
+    { id: 'walls', icon: '🧱', label: 'Walls', badge: wallCount > 0 ? `${wallCount}` : undefined },
     { id: 'doors', icon: '🚪', label: 'Doors', badge: doorCount > 0 ? `${doorCount}` : undefined },
     { id: 'furniture', icon: '🪑', label: 'Furniture', badge: furnitureCount > 0 ? `${furnitureCount}` : undefined },
     { id: 'settings', icon: '⚙️', label: 'Settings' },
@@ -907,9 +1086,29 @@ export const RoomBuilderPage: React.FC<RoomBuilderPageProps> = ({
     setSelectedSegment(null);
     setHoveredSegment(null);
     // Close any open editor pop-outs
-    setSelectedDoorId(null);
-    setSelectedFurnitureId(null);
+    setSelectedItem(null);
     setShowDeviceEditor(false);
+  }, []);
+
+  /** Unified canvas item selection — maps item type to the right sidebar section + active item */
+  const sectionForItemType: Record<CanvasItemType, EditorSection> = {
+    device: 'devices',
+    zone: 'zones',
+    door: 'doors',
+    furniture: 'furniture',
+  };
+
+  const handleItemSelect = useCallback((type: CanvasItemType, id: string) => {
+    setActiveSection(sectionForItemType[type]);
+    setSelectedItem({ type, id });
+    // Device-specific: also open the device editor panel
+    if (type === 'device') {
+      setShowDeviceEditor(true);
+    }
+    // Furniture-specific: close the library modal if open
+    if (type === 'furniture') {
+      setShowFurnitureLibrary(false);
+    }
   }, []);
 
   const handleBackToDashboard = useCallback(() => {
@@ -1111,11 +1310,12 @@ export const RoomBuilderPage: React.FC<RoomBuilderPageProps> = ({
                       rotationDeg: 0,
                     }
                   }
-                  onDeviceChange={(placement) => {
+                  onItemSelect={handleItemSelect}
+                  onDeviceChange={activeSection === 'devices' ? (placement) => {
                     if (!selectedRoom) return;
                     const nextRoom: RoomConfig = { ...selectedRoom, devicePlacement: placement };
                     setRooms((prev) => prev.map((r) => (r.id === selectedRoom.id ? nextRoom : r)));
-                  }}
+                  } : undefined}
                   fieldOfViewDeg={selectedProfile?.limits?.fieldOfViewDegrees}
                   maxRangeMeters={selectedProfile?.limits?.maxRangeMeters}
                   deviceIconUrl={selectedProfile?.iconUrl}
@@ -1159,20 +1359,19 @@ export const RoomBuilderPage: React.FC<RoomBuilderPageProps> = ({
                   height="100%"
                   furniture={selectedRoom.furniture ?? []}
                   selectedFurnitureId={selectedFurnitureId}
-                  onFurnitureSelect={(id) => {
-                    setSelectedFurnitureId(id);
-                    setShowFurnitureLibrary(false);
-                  }}
-                  onFurnitureChange={handleFurnitureChange}
+                  onFurnitureChange={activeSection === 'furniture' ? handleFurnitureChange : undefined}
                   doors={selectedRoom.doors ?? []}
                   selectedDoorId={selectedDoorId}
-                  onDoorSelect={(id) => { setSelectedDoorId(id); setActiveSection(null); }}
-                  onDoorChange={handleDoorChange}
+                  onDoorChange={activeSection === 'doors' ? handleDoorChange : undefined}
                   isDoorPlacementMode={isDoorPlacementMode}
                   onWallSegmentClick={handleWallSegmentClick}
-                  onDoorDragStart={handleDoorDragStart}
-                  onDoorDragMove={handleDoorDragMove}
-                  onDoorDragEnd={handleDoorDragEnd}
+                  onDoorDragStart={activeSection === 'doors' ? handleDoorDragStart : undefined}
+                  onDoorDragMove={activeSection === 'doors' ? handleDoorDragMove : undefined}
+                  onDoorDragEnd={activeSection === 'doors' ? handleDoorDragEnd : undefined}
+                  zones={selectedRoom.zones ?? []}
+                  selectedZoneId={selectedZoneId}
+                  onZoneChange={activeSection === 'zones' ? handleZoneChange : undefined}
+                  showZones={showZones}
                   roomShellFillMode={selectedRoom.roomShellFillMode}
                   floorMaterial={selectedRoom.floorMaterial}
                   showWalls={showWalls}
@@ -1307,11 +1506,12 @@ export const RoomBuilderPage: React.FC<RoomBuilderPageProps> = ({
                         profileId: pendingProfile.id,
                         entityMappings: mappings,
                         entityNamePrefix: pendingDevice.entityNamePrefix,
-                        devicePlacement: selectedRoom.devicePlacement ?? {
-                          x: selectedRoom.roomShell?.centroid?.x ?? 0,
-                          y: selectedRoom.roomShell?.centroid?.y ?? 0,
-                          rotationDeg: 0,
-                        },
+                        devicePlacement: selectedRoom.devicePlacement ?? (() => {
+                          const c = selectedRoom.roomShell?.points?.length
+                            ? computeCentroid(selectedRoom.roomShell.points)
+                            : { x: 0, y: 0 };
+                          return { x: c.x, y: c.y, rotationDeg: 0 };
+                        })(),
                       };
                       setRooms((prev) => prev.map((r) => (r.id === selectedRoom.id ? nextRoom : r)));
                       setSelectedProfileId(pendingProfile.id);
@@ -1354,7 +1554,7 @@ export const RoomBuilderPage: React.FC<RoomBuilderPageProps> = ({
                           >
                             <div className="font-semibold text-sm text-slate-100">{d.name || d.id}</div>
                             {profile && (
-                              <div className="text-xs text-slate-400 mt-0.5">{profile.name}</div>
+                              <div className="text-xs text-slate-400 mt-0.5">{profile.label}</div>
                             )}
                           </button>
                         );
@@ -1381,20 +1581,34 @@ export const RoomBuilderPage: React.FC<RoomBuilderPageProps> = ({
                     <div
                       onClick={() => {
                         setShowDeviceEditor(true);
-                        setActiveSection(null);
                       }}
-                      className={`rounded-lg border p-2 cursor-pointer transition-all ${
-                        showDeviceEditor
-                          ? 'border-aqua-500 bg-aqua-600/20'
-                          : 'border-slate-700 bg-slate-800/30 hover:border-slate-600'
-                      }`}
+                      className="group relative rounded-lg border p-2 cursor-pointer transition-all border-slate-700 bg-slate-800/30 hover:border-slate-600"
                     >
+                      {/* Remove button — visible on hover, top-right */}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const nextRoom: RoomConfig = {
+                            ...selectedRoom!,
+                            deviceId: undefined,
+                            profileId: undefined,
+                            entityMappings: undefined,
+                            entityNamePrefix: undefined,
+                          };
+                          setRooms((prev) => prev.map((r) => (r.id === selectedRoom!.id ? nextRoom : r)));
+                          setShowDeviceEditor(false);
+                        }}
+                        className="absolute top-1 right-1 z-10 opacity-0 group-hover:opacity-100 text-slate-600 hover:text-red-400 transition-all text-sm"
+                        title="Remove device"
+                      >
+                        🗑
+                      </button>
                       <div className="flex items-center gap-2">
                         <span className="text-base">📡</span>
                         <div>
                           <div className="text-xs text-slate-200 font-medium">{selectedDevice.name || selectedDevice.id}</div>
-                          {currentProfile && (
-                            <div className="text-[10px] text-slate-400">{currentProfile.name}</div>
+                          {selectedProfile && (
+                            <div className="text-[10px] text-slate-400">{selectedProfile.label ?? selectedProfile.id}</div>
                           )}
                         </div>
                       </div>
@@ -1406,33 +1620,86 @@ export const RoomBuilderPage: React.FC<RoomBuilderPageProps> = ({
           )}
 
           {/* Zones Panel */}
-          {activeSection === 'zones' && (
-            <PopOutPanel
-              title="Zones"
-              subtitle={hasDevice ? 'Configure detection zones' : 'Add a device first'}
-              onClose={() => setActiveSection(null)}
-            >
-              {!hasDevice ? (
-                <div className="text-center py-8 text-slate-400 text-sm">
-                  Add a device to this room to configure zones.
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  <p className="text-sm text-slate-300">
-                    Zone editing for this room's device.
-                  </p>
+          {activeSection === 'zones' && (() => {
+            const zones = selectedRoom?.zones ?? [];
+            const zoneCount = zones.length;
+            return (
+              <PopOutPanel
+                title="Zones"
+                subtitle={zoneCount > 0 ? `${zoneCount} zone${zoneCount !== 1 ? 's' : ''}` : 'No zones configured'}
+                onClose={() => setActiveSection(null)}
+              >
+                <div className="flex flex-col gap-2 text-sm">
+                  {/* Room-level shape toggle */}
+                  <div className="flex gap-1.5">
+                    <button
+                      onClick={() => handleSetZoneMode('rect')}
+                      className={`flex-1 rounded-lg border px-2 py-1.5 text-[11px] font-semibold transition-all ${
+                        zoneMode === 'rect'
+                          ? 'border-aqua-500/50 bg-aqua-600/20 text-aqua-100'
+                          : 'border-slate-700 bg-slate-800/30 text-slate-400 hover:border-slate-600'
+                      }`}
+                    >
+                      ▭ Rectangle
+                    </button>
+                    <button
+                      onClick={() => handleSetZoneMode('polygon')}
+                      className={`flex-1 rounded-lg border px-2 py-1.5 text-[11px] font-semibold transition-all ${
+                        zoneMode === 'polygon'
+                          ? 'border-aqua-500/50 bg-aqua-600/20 text-aqua-100'
+                          : 'border-slate-700 bg-slate-800/30 text-slate-400 hover:border-slate-600'
+                      }`}
+                    >
+                      ⬠ Polygon
+                    </button>
+                  </div>
                   <button
-                    onClick={() => {
-                      if (onNavigate) onNavigate('zoneEditor');
-                    }}
-                    className="w-full rounded-xl border border-blue-500/50 bg-blue-600/20 px-4 py-3 text-sm font-semibold text-blue-100 transition-all hover:bg-blue-600/30 active:scale-95"
+                    className="rounded-xl border border-slate-700/50 bg-slate-800/50 px-4 py-2.5 font-semibold text-slate-200 shadow-lg transition-all hover:border-slate-600 active:scale-95"
+                    onClick={handleAddZone}
+                    disabled={!selectedRoom}
                   >
-                    📐 Open Zone Editor
+                    + Add Zone
                   </button>
+                  {zoneCount === 0 && (
+                    <div className="text-center py-4 text-slate-400 text-xs">
+                      Add detection zones to define monitoring areas.
+                    </div>
+                  )}
+                  {zones.map((zone) => (
+                    <div
+                      key={zone.id}
+                      onClick={() => setSelectedItem({ type: 'zone', id: zone.id })}
+                      className={`rounded-lg border p-2 cursor-pointer transition-all ${
+                        selectedZoneId === zone.id
+                          ? 'border-aqua-500 bg-aqua-600/20'
+                          : 'border-slate-700 bg-slate-800/30 hover:border-slate-600'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs text-slate-200">
+                          {zone.label || `Zone ${zone.id.slice(0, 6)}`}
+                        </span>
+                        <div className="flex items-center gap-1.5">
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded ${
+                            zone.type === 'exclusion'
+                              ? 'bg-red-500/20 text-red-300'
+                              : zone.type === 'entry'
+                                ? 'bg-yellow-500/20 text-yellow-300'
+                                : 'bg-blue-500/20 text-blue-300'
+                          }`}>
+                            {zone.type}
+                          </span>
+                          {zone.enabled === false && (
+                            <span className="text-[10px] text-slate-500">off</span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
                 </div>
-              )}
-            </PopOutPanel>
-          )}
+              </PopOutPanel>
+            );
+          })()}
 
           {/* Doors Panel */}
           {activeSection === 'doors' && (
@@ -1462,8 +1729,7 @@ export const RoomBuilderPage: React.FC<RoomBuilderPageProps> = ({
                   <div
                     key={door.id}
                     onClick={() => {
-                      setSelectedDoorId(door.id);
-                      setActiveSection(null);
+                      setSelectedItem({ type: 'door', id: door.id });
                     }}
                     className={`rounded-lg border p-2 cursor-pointer transition-all ${
                       selectedDoorId === door.id
@@ -1499,7 +1765,7 @@ export const RoomBuilderPage: React.FC<RoomBuilderPageProps> = ({
                   }`}
                   onClick={() => {
                     setShowFurnitureLibrary((v) => !v);
-                    setSelectedFurnitureId(null);
+                    setSelectedItem(null);
                   }}
                   disabled={!selectedRoom}
                 >
@@ -1509,7 +1775,7 @@ export const RoomBuilderPage: React.FC<RoomBuilderPageProps> = ({
                   <div
                     key={f.id}
                     onClick={() => {
-                      setSelectedFurnitureId(f.id);
+                      setSelectedItem({ type: 'furniture', id: f.id });
                       setShowFurnitureLibrary(false);
                     }}
                     className={`rounded-lg border p-2 cursor-pointer transition-all ${
@@ -1708,7 +1974,8 @@ export const RoomBuilderPage: React.FC<RoomBuilderPageProps> = ({
                           <span className="flex items-center gap-1.5">
                             <span className="w-3 h-3 rounded-full bg-blue-500"></span>
                             Live Tracking
-                            {!liveState?.deviceId && <span className="text-slate-500 text-xs ml-1">(No device)</span>}
+                            {!selectedRoom?.deviceId && <span className="text-slate-500 text-xs ml-1">(No device)</span>}
+                            {selectedRoom?.deviceId && !liveState?.deviceId && <span className="text-slate-500 text-xs ml-1">(Connecting…)</span>}
                           </span>
                         </label>
                       </div>
@@ -1913,7 +2180,19 @@ export const RoomBuilderPage: React.FC<RoomBuilderPageProps> = ({
               furniture={selectedFurniture}
               onChange={handleFurnitureChange}
               onDelete={handleFurnitureDelete}
-              onClose={() => setSelectedFurnitureId(null)}
+              onClose={() => setSelectedItem(null)}
+            />
+          )}
+
+          {/* Zone Editor Panel */}
+          {selectedZone && (
+            <ZoneEditorPanel
+              zone={selectedZone}
+              onChange={handleZoneChange}
+              onDelete={handleZoneDelete}
+              onClose={() => setSelectedItem(null)}
+              onDeleteVertex={handleDeleteZoneVertex}
+              coverage={selectedZoneCoverage}
             />
           )}
 
@@ -1923,7 +2202,7 @@ export const RoomBuilderPage: React.FC<RoomBuilderPageProps> = ({
               door={selectedDoor}
               onChange={handleDoorChange}
               onDelete={handleDoorDelete}
-              onClose={() => setSelectedDoorId(null)}
+              onClose={() => setSelectedItem(null)}
               maxSegmentIndex={(selectedRoom?.roomShell?.points?.length ?? 1) - 1}
               validation={doorValidation}
             />
@@ -1934,7 +2213,7 @@ export const RoomBuilderPage: React.FC<RoomBuilderPageProps> = ({
             <DeviceEditor
               deviceName={selectedDevice?.name || selectedDevice?.id || 'Device'}
               placement={selectedRoom.devicePlacement ?? { x: 0, y: 0, rotationDeg: 0 }}
-              roomCentroid={selectedRoom.roomShell?.centroid}
+              roomCentroid={selectedRoom.roomShell?.points?.length ? computeCentroid(selectedRoom.roomShell.points) : undefined}
               onPlacementChange={(placement) => {
                 const nextRoom: RoomConfig = { ...selectedRoom, devicePlacement: placement };
                 setRooms((prev) => prev.map((r) => (r.id === selectedRoom.id ? nextRoom : r)));

@@ -28,7 +28,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DEV_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 COMPOSE_FILE="${DEV_DIR}/docker-compose.dev.yaml"
-COMPOSE_CMD="docker compose -f ${COMPOSE_FILE}"
+COMPOSE_CMD="docker compose -f ${COMPOSE_FILE} --profile full"
 
 HA_URL="http://localhost:${HA_PORT:-18123}"
 CONFIGURATOR_URL="http://localhost:${CONFIGURATOR_PORT:-42069}"

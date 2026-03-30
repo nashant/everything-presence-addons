@@ -33,7 +33,7 @@ interface ZoneCanvasProps {
   showRadar?: boolean;
   furniture?: FurnitureInstance[];
   selectedFurnitureId?: string | null;
-  onFurnitureSelect?: (id: string | null) => void;
+  onItemSelect?: (type: 'device' | 'zone' | 'door' | 'furniture', id: string) => void;
   doors?: Door[];
   onDragStateChange?: (isDragging: boolean) => void;
   // Zone labels from device mapping (overrides zone.label)
@@ -80,7 +80,7 @@ export const ZoneCanvas: React.FC<ZoneCanvasProps> = ({
   showRadar,
   furniture = [],
   selectedFurnitureId,
-  onFurnitureSelect,
+  onItemSelect,
   doors = [],
   onDragStateChange,
   zoneLabels,
@@ -368,7 +368,7 @@ export const ZoneCanvas: React.FC<ZoneCanvasProps> = ({
                 style={{ cursor: 'pointer' }}
                 onClick={(e) => {
                   e.stopPropagation();
-                  onFurnitureSelect?.(item.id);
+                  onItemSelect?.('furniture', item.id);
                 }}
               />
             </g>

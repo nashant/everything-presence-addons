@@ -4,20 +4,63 @@ Self-contained development environment for the Everything Presence mmWave Config
 
 ## Quick Start
 
-**Prerequisites:** Docker and Docker Compose (v2+).
+**Prerequisites:** Docker and Docker Compose (v2+), Node.js ≥18.
+
+### Option A: Local dev (recommended for development)
+
+Hot-reload on backend and frontend — changes are reflected instantly.
 
 ```bash
 # From the repo root:
-docker compose -f dev/docker-compose.dev.yaml up
+cd everything-presence-mmwave-configurator && npm ci && cd ..
+bash dev/scripts/dev-start.sh
 ```
 
-First start takes ~60–90 seconds. The stack is ready when you see logs from `mock-devices` showing "Mock devices fully initialized".
+| Service | URL | Runs on |
+|---------|-----|---------|
+| Frontend (Vite) | http://localhost:5173 | Host |
+| Backend (ts-node-dev) | http://localhost:42069 | Host |
+| Home Assistant | http://localhost:18123 | Docker |
+| MQTT Broker | `localhost:1883` | Docker |
+
+The Vite dev server proxies `/api/*` and `/ws/*` to the backend automatically.
+Open **http://localhost:5173** in your browser.
+
+If the infra containers are already running, skip the Docker startup:
+```bash
+bash dev/scripts/dev-start.sh --skip-infra
+```
+
+### What `dev-start.sh` does
+
+1. Starts Docker infra — HA, Mosquitto, mock-devices, ha-bootstrap (no configurator)
+2. Waits for ha-bootstrap to complete (writes HA token to shared volume)
+3. Reads the bootstrapped token from the Docker volume
+4. Writes `backend/.env` with `HA_BASE_URL`, `HA_LONG_LIVED_TOKEN`, `PORT`, `DATA_DIR`
+5. Starts backend (ts-node-dev, hot-reload) and frontend (Vite, HMR) concurrently
+
+The Vite dev server (`frontend/vite.config.ts`) proxies `/api/*` and `/ws/*` to the
+backend on port 42069. This proxy only applies in dev mode — production builds serve
+through the Express backend directly.
+
+### Option B: Full-Docker (all services in containers)
+
+No hot-reload. Requires a Docker rebuild after code changes.
+
+```bash
+# From the repo root:
+docker compose -f dev/docker-compose.dev.yaml --profile full up
+```
 
 | Service | URL |
 |---------|-----|
 | Configurator | http://localhost:42069 |
 | Home Assistant | http://localhost:18123 |
 | MQTT Broker | `localhost:1883` |
+
+First start takes ~60–90 seconds. The stack is ready when you see logs from `mock-devices` showing "Mock devices fully initialized".
+
+### Credentials
 
 HA credentials: `dev` / `devpassword`
 
@@ -135,7 +178,22 @@ On failure, it dumps logs for the failing service.
 
 ## Developing
 
-### Rebuild after code changes
+### Local dev mode (Option A)
+
+`dev-start.sh` handles everything automatically:
+1. Starts Docker infra (HA, MQTT, mock-devices, bootstrap)
+2. Reads the bootstrapped HA token from the Docker shared volume
+3. Writes `backend/.env` with the correct `HA_BASE_URL`, token, and `DATA_DIR`
+4. Starts both backend (ts-node-dev) and frontend (Vite) with hot-reload
+
+The generated `backend/.env` and `backend/.data/` are gitignored.
+
+The Vite config (`frontend/vite.config.ts`) includes a dev proxy that forwards
+`/api/*` and `/ws/*` to the backend on port 42069. This proxy is only active
+in Vite's dev server — the production build serves through the Express backend
+directly.
+
+### Full-Docker mode (Option B): Rebuild after code changes
 
 ```bash
 # Rebuild just the configurator
@@ -145,7 +203,7 @@ docker compose -f dev/docker-compose.dev.yaml build configurator
 docker compose -f dev/docker-compose.dev.yaml up -d --build configurator
 ```
 
-### View logs
+### View Docker logs
 
 ```bash
 # All services
@@ -157,7 +215,7 @@ docker compose -f dev/docker-compose.dev.yaml logs -f mock-devices
 docker compose -f dev/docker-compose.dev.yaml logs -f ha-bootstrap
 ```
 
-### Restart individual services
+### Restart Docker services
 
 ```bash
 docker compose -f dev/docker-compose.dev.yaml restart configurator
@@ -193,7 +251,10 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:18123/api/config/config_
 ### Clean shutdown
 
 ```bash
-# Stop and remove all containers and volumes
+# Stop everything (infra + configurator) and remove volumes
+docker compose -f dev/docker-compose.dev.yaml --profile full down -v
+
+# Stop infra only (when using local dev mode)
 docker compose -f dev/docker-compose.dev.yaml down -v
 ```
 

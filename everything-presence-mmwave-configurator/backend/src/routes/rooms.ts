@@ -1,21 +1,37 @@
 import { Router } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { storage } from '../config/storage';
-import { DevicePlacement, Door, EntityMappings, FurnitureInstance, RoomConfig, RoomShell, ZoneRect, ZoneEntitySet, TargetEntitySet } from '../domain/types';
+import { DevicePlacement, Door, EntityMappings, FurnitureInstance, RoomConfig, RoomShell, Zone, ZoneRect, ZonePolygon, ZoneEntitySet, TargetEntitySet } from '../domain/types';
 
 export const createRoomsRouter = (): Router => {
   const router = Router();
 
-  const parseZone = (zone: any, fallbackId?: string): ZoneRect => ({
-    id: zone?.id ?? fallbackId ?? uuidv4(),
-    type: zone?.type === 'exclusion' || zone?.type === 'entry' ? zone.type : 'regular',
-    x: Number(zone?.x ?? 0),
-    y: Number(zone?.y ?? 0),
-    width: Number(zone?.width ?? 0),
-    height: Number(zone?.height ?? 0),
-    enabled: zone?.enabled !== undefined ? Boolean(zone.enabled) : undefined,
-    label: typeof zone?.label === 'string' && zone.label.trim() ? zone.label.trim() : undefined,
-  });
+  const parseZone = (zone: any, fallbackId?: string): Zone => {
+    const id = zone?.id ?? fallbackId ?? uuidv4();
+    const type = zone?.type === 'exclusion' || zone?.type === 'entry' ? zone.type : 'regular' as const;
+    const enabled = zone?.enabled !== undefined ? Boolean(zone.enabled) : undefined;
+    const label = typeof zone?.label === 'string' && zone.label.trim() ? zone.label.trim() : undefined;
+
+    // Polygon zone: has vertices array
+    if (Array.isArray(zone?.vertices) && zone.vertices.length >= 3) {
+      const vertices = zone.vertices
+        .map((v: any) => ({ x: Number(v?.x ?? 0), y: Number(v?.y ?? 0) }))
+        .filter((v: { x: number; y: number }) => Number.isFinite(v.x) && Number.isFinite(v.y));
+      if (vertices.length >= 3) {
+        return { id, type, vertices, enabled, label } as ZonePolygon;
+      }
+    }
+
+    // Rectangle zone (default)
+    return {
+      id, type,
+      x: Number(zone?.x ?? 0),
+      y: Number(zone?.y ?? 0),
+      width: Number(zone?.width ?? 0),
+      height: Number(zone?.height ?? 0),
+      enabled, label,
+    } as ZoneRect;
+  };
 
   const parseRoomShell = (shell: any): RoomShell | undefined => {
     if (!shell || !Array.isArray(shell.points)) return undefined;
@@ -25,7 +41,13 @@ export const createRoomsRouter = (): Router => {
         y: Number(p?.y ?? 0),
       }))
       .filter((p: any) => Number.isFinite(p.x) && Number.isFinite(p.y));
-    return points.length ? { points } : undefined;
+    if (!points.length) return undefined;
+    const result: RoomShell = { points };
+    // Preserve centroid if provided by the client
+    if (shell.centroid && Number.isFinite(Number(shell.centroid.x)) && Number.isFinite(Number(shell.centroid.y))) {
+      result.centroid = { x: Number(shell.centroid.x), y: Number(shell.centroid.y) };
+    }
+    return result;
   };
 
   const parseDevicePlacement = (placement: any): DevicePlacement | undefined => {
