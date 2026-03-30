@@ -58,7 +58,7 @@ The upstream codebase already has everything: RoomCanvas, RoomBuilderPage, ZoneE
 - [x] **S02: Room-first entry flow** `risk:medium` `depends:[S01]`
   > After this: Floors + HA import on backend. Dashboard shows rooms by floor. Create room (name + floor + walls) without device. Add device to existing room. Zone editor and live tracking work. Full flow in Docker dev stack.
 
-- [ ] **S03: Room Editor navigation & panel rework** `risk:high` `depends:[S02]`
+- [x] **S03: Room Editor navigation & panel rework** `risk:high` `depends:[S02]`
   > After this: Left panel with context-switching sections (Walls, Devices, Zones, Doors, Furniture, Settings). Pop-out panels styled like Zone Slots. Zone editor embedded inline. Save returns to Dashboard. Old menu removed.
 
 ## Boundary Map
