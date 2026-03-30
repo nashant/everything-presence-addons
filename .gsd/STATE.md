@@ -1,8 +1,8 @@
 # GSD State
 
 **Active Milestone:** M003 — Multi-Device Room Support
-**Active Slice:** None (S01 complete)
-**Phase:** idle
+**Active Slice:** S02 — Frontend data model + RoomCanvas multi-sensor rendering
+**Phase:** planning
 **Requirements Status:** 0 active · 0 validated · 0 deferred · 0 out of scope
 
 ## Milestone Registry
@@ -17,4 +17,4 @@
 - None
 
 ## Next Action
-Continue M003 — next slice planning.
+Plan slice S02 (Frontend data model + RoomCanvas multi-sensor rendering).
