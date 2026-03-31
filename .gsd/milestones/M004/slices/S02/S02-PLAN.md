@@ -75,7 +75,7 @@ Add the `mqtt` npm package (v5.x, same as mock-devices) to the backend and creat
   - Estimate: 1h
   - Files: everything-presence-mmwave-configurator/backend/package.json, everything-presence-mmwave-configurator/backend/src/ha/types.ts, everything-presence-mmwave-configurator/backend/src/config.ts, everything-presence-mmwave-configurator/backend/src/ha/mqttClient.ts, everything-presence-mmwave-configurator/backend/src/ha/discoveryPayload.ts, everything-presence-mmwave-configurator/backend/src/__tests__/unit/discoveryPayload.test.ts
   - Verify: cd everything-presence-mmwave-configurator && npx vitest run src/__tests__/unit/discoveryPayload.test.ts
-- [ ] **T02: Create Jinja2 template generator with unit tests for all aggregation modes** — ## Description
+- [x] **T02: Created templateGenerator.ts with four Jinja2 generators (OR, majority, no-change-on-tie, max target count), dispatcher, AggregationMode type, and 27 passing unit tests** — ## Description
 
 Create `backend/src/ha/templateGenerator.ts` — a pure-function module that generates Jinja2 template strings for HA value_template fields. This is the core logic of S02: translating zone-to-sensor assignments into correct Jinja2 that HA evaluates for occupancy aggregation.
 

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "exported_at": "2026-03-31T10:50:36.656Z",
+  "exported_at": "2026-03-31T10:53:07.112Z",
   "milestones": [
     {
       "id": "M001",
@@ -1808,19 +1808,27 @@
       "milestone_id": "M004",
       "slice_id": "S02",
       "id": "T02",
-      "title": "Create Jinja2 template generator with unit tests for all aggregation modes",
-      "status": "pending",
-      "one_liner": "",
-      "narrative": "",
-      "verification_result": "",
+      "title": "Created templateGenerator.ts with four Jinja2 generators (OR, majority, no-change-on-tie, max target count), dispatcher, AggregationMode type, and 27 passing unit tests",
+      "status": "complete",
+      "one_liner": "Created templateGenerator.ts with four Jinja2 generators (OR, majority, no-change-on-tie, max target count), dispatcher, AggregationMode type, and 27 passing unit tests",
+      "narrative": "Implemented backend/src/ha/templateGenerator.ts as a pure-function module with no runtime dependencies. Four template generators cover all aggregation strategies: OR mode chains is_state() calls with 'or', majority mode builds a states() list filtered with select('eq','on') and compares against total/2, no-change-on-tie uses if/elif/else with self-entity states() fallback on tie, and max target count builds a list of states()|int(0) piped through |max. The generateTemplate dispatcher routes AggregationMode unions with exhaustive TypeScript checking. Edge cases (empty lists, single sensor) produce simplified templates. 27 unit tests cover all modes with varying sensor counts, empty lists, degenerate cases, dispatcher routing, and the negative case of missing selfEntityId.",
+      "verification_result": "npx vitest run backend/src/__tests__/unit/templateGenerator.test.ts — 27/27 tests pass. npx vitest run backend/src/__tests__/unit/discoveryPayload.test.ts — 32/32 T01 tests still pass. grep confirms mqtt dependency in package.json.",
       "duration": "",
-      "completed_at": null,
+      "completed_at": "2026-03-31T10:53:07.099Z",
       "blocker_discovered": false,
-      "deviations": "",
-      "known_issues": "",
-      "key_files": [],
-      "key_decisions": [],
-      "full_summary_md": "",
+      "deviations": "None.",
+      "known_issues": "None.",
+      "key_files": [
+        "everything-presence-mmwave-configurator/backend/src/ha/templateGenerator.ts",
+        "everything-presence-mmwave-configurator/backend/src/__tests__/unit/templateGenerator.test.ts"
+      ],
+      "key_decisions": [
+        "Majority uses Jinja2 float division (count_on > N / 2) so odd counts resolve correctly without integer rounding",
+        "No-change-on-tie uses states() with default('OFF', true) for self-reference fallback when entity is unavailable/unknown",
+        "generateMaxTargetCountTemplate excluded from AggregationMode dispatcher — uses sensor entities, called directly by orchestration",
+        "Single-sensor degenerate cases simplify to direct is_state/states calls instead of list construction"
+      ],
+      "full_summary_md": "---\nid: T02\nparent: S02\nmilestone: M004\nkey_files:\n  - everything-presence-mmwave-configurator/backend/src/ha/templateGenerator.ts\n  - everything-presence-mmwave-configurator/backend/src/__tests__/unit/templateGenerator.test.ts\nkey_decisions:\n  - Majority uses Jinja2 float division (count_on > N / 2) so odd counts resolve correctly without integer rounding\n  - No-change-on-tie uses states() with default('OFF', true) for self-reference fallback when entity is unavailable/unknown\n  - generateMaxTargetCountTemplate excluded from AggregationMode dispatcher — uses sensor entities, called directly by orchestration\n  - Single-sensor degenerate cases simplify to direct is_state/states calls instead of list construction\nduration: \"\"\nverification_result: passed\ncompleted_at: 2026-03-31T10:53:07.099Z\nblocker_discovered: false\n---\n\n# T02: Created templateGenerator.ts with four Jinja2 generators (OR, majority, no-change-on-tie, max target count), dispatcher, AggregationMode type, and 27 passing unit tests\n\n**Created templateGenerator.ts with four Jinja2 generators (OR, majority, no-change-on-tie, max target count), dispatcher, AggregationMode type, and 27 passing unit tests**\n\n## What Happened\n\nImplemented backend/src/ha/templateGenerator.ts as a pure-function module with no runtime dependencies. Four template generators cover all aggregation strategies: OR mode chains is_state() calls with 'or', majority mode builds a states() list filtered with select('eq','on') and compares against total/2, no-change-on-tie uses if/elif/else with self-entity states() fallback on tie, and max target count builds a list of states()|int(0) piped through |max. The generateTemplate dispatcher routes AggregationMode unions with exhaustive TypeScript checking. Edge cases (empty lists, single sensor) produce simplified templates. 27 unit tests cover all modes with varying sensor counts, empty lists, degenerate cases, dispatcher routing, and the negative case of missing selfEntityId.\n\n## Verification\n\nnpx vitest run backend/src/__tests__/unit/templateGenerator.test.ts — 27/27 tests pass. npx vitest run backend/src/__tests__/unit/discoveryPayload.test.ts — 32/32 T01 tests still pass. grep confirms mqtt dependency in package.json.\n\n## Verification Evidence\n\n| # | Command | Exit Code | Verdict | Duration |\n|---|---------|-----------|---------|----------|\n| 1 | `cd everything-presence-mmwave-configurator && npx vitest run backend/src/__tests__/unit/templateGenerator.test.ts` | 0 | ✅ pass | 2900ms |\n| 2 | `cd everything-presence-mmwave-configurator && npx vitest run backend/src/__tests__/unit/discoveryPayload.test.ts` | 0 | ✅ pass | 2600ms |\n| 3 | `grep '\"mqtt\"' everything-presence-mmwave-configurator/package.json` | 0 | ✅ pass | 50ms |\n\n\n## Deviations\n\nNone.\n\n## Known Issues\n\nNone.\n\n## Files Created/Modified\n\n- `everything-presence-mmwave-configurator/backend/src/ha/templateGenerator.ts`\n- `everything-presence-mmwave-configurator/backend/src/__tests__/unit/templateGenerator.test.ts`\n",
       "description": "## Description\n\nCreate `backend/src/ha/templateGenerator.ts` — a pure-function module that generates Jinja2 template strings for HA value_template fields. This is the core logic of S02: translating zone-to-sensor assignments into correct Jinja2 that HA evaluates for occupancy aggregation.\n\nThe module needs no runtime dependencies — it takes entity ID strings and returns Jinja2 template strings. Fully unit-testable.\n\n**Functions to implement:**\n\n1. `generateOrTemplate(sensorEntityIds: string[]): string` — Returns Jinja2 that evaluates to `'ON'` if ANY sensor reports `'on'`, else `'OFF'`. Uses `is_state()` calls joined with `or`.\n   - Example for 2 sensors: `{{ 'ON' if is_state('binary_sensor.mock_ep_lite_1_zone_2_occupancy', 'on') or is_state('binary_sensor.mock_ep_lite_2_zone_1_occupancy', 'on') else 'OFF' }}`\n\n2. `generateMajorityTemplate(sensorEntityIds: string[]): string` — Returns Jinja2 that evaluates to `'ON'` if MORE THAN HALF of sensors report `'on'`, else `'OFF'`. Uses `states()` calls collected into a list, filtered with `select('eq', 'on')`, counted.\n\n3. `generateNoChangeOnTieTemplate(sensorEntityIds: string[], selfEntityId: string): string` — Returns Jinja2 that evaluates to `'ON'` if majority on, `'OFF'` if majority off, and holds the entity's own previous state on tie. Uses `states()` for self-reference.\n\n4. `generateMaxTargetCountTemplate(sensorEntityIds: string[]): string` — Returns Jinja2 that takes the max of `states()` calls with `|int(0)` fallback across all sensors. Output is the max integer.\n   - Example: `{{ [states('sensor.mock_ep_lite_1_zone_2_target_count') | int(0), states('sensor.mock_ep_lite_2_zone_1_target_count') | int(0)] | max }}`\n\n5. `generateTemplate(mode: AggregationMode, sensorEntityIds: string[], selfEntityId?: string): string` — Dispatcher that calls the correct generator based on mode. `AggregationMode` is a union type: `'or' | 'majority' | 'no_change_on_tie'`.\n\n**Type to export:** `type AggregationMode = 'or' | 'majority' | 'no_change_on_tie';`\n\n**Edge cases:**\n- Single sensor: OR and majority both simplify to direct `is_state()` check\n- Empty sensor list: return a template that evaluates to `'OFF'` (unavailable/no coverage)\n- No-change-on-tie with single sensor: degenerates to direct check (tie impossible with 1)\n- Max target count with single sensor: simplifies to `{{ states('sensor.x') | int(0) }}`\n\n## Steps\n\n1. Create `backend/src/ha/templateGenerator.ts` with all functions above\n2. Export `AggregationMode` type\n3. Create `backend/src/__tests__/unit/templateGenerator.test.ts` with comprehensive tests:\n   - OR mode: 1 sensor, 2 sensors, 3 sensors — verify correct `is_state()` calls and `or` chaining\n   - Majority mode: 1 sensor, 2 sensors, 3 sensors, 4 sensors — verify list construction and count comparison\n   - No-change-on-tie: 2 sensors (tie possible), 3 sensors (no tie possible with odd count, but template should still handle it), verify self-reference entity ID appears correctly\n   - Max target count: 1 sensor, 2 sensors, 3 sensors — verify `int(0)` fallbacks and `max` filter\n   - Empty sensor list: all modes return sensible fallback\n   - Dispatcher `generateTemplate()` routes to correct generator\n4. Run tests: `npx vitest run src/__tests__/unit/templateGenerator.test.ts`\n\n## Must-Haves\n\n- [ ] All four aggregation mode generators produce syntactically valid Jinja2\n- [ ] OR template uses `is_state()` with `or` chaining\n- [ ] Majority template uses `states()` list with `select('eq', 'on')` count comparison\n- [ ] No-change-on-tie template includes self-entity-id reference for tie fallback\n- [ ] Max target count template uses `int(0)` fallback and `max` filter\n- [ ] Edge cases (single sensor, empty list) handled\n- [ ] AggregationMode type exported\n- [ ] All unit tests pass\n\n## Verification\n\n- `cd everything-presence-mmwave-configurator && npx vitest run src/__tests__/unit/templateGenerator.test.ts` — all tests pass\n\n## Negative Tests\n\n- Empty sensor entity ID list for all aggregation modes\n- Single sensor for all modes (degenerate cases)",
       "estimate": "45m",
       "files": [
@@ -2474,6 +2482,39 @@
       "verdict": "✅ pass",
       "duration_ms": 500,
       "created_at": "2026-03-31T10:50:36.640Z"
+    },
+    {
+      "id": 39,
+      "task_id": "T02",
+      "slice_id": "S02",
+      "milestone_id": "M004",
+      "command": "cd everything-presence-mmwave-configurator && npx vitest run backend/src/__tests__/unit/templateGenerator.test.ts",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 2900,
+      "created_at": "2026-03-31T10:53:07.099Z"
+    },
+    {
+      "id": 40,
+      "task_id": "T02",
+      "slice_id": "S02",
+      "milestone_id": "M004",
+      "command": "cd everything-presence-mmwave-configurator && npx vitest run backend/src/__tests__/unit/discoveryPayload.test.ts",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 2600,
+      "created_at": "2026-03-31T10:53:07.099Z"
+    },
+    {
+      "id": 41,
+      "task_id": "T02",
+      "slice_id": "S02",
+      "milestone_id": "M004",
+      "command": "grep '\"mqtt\"' everything-presence-mmwave-configurator/package.json",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 50,
+      "created_at": "2026-03-31T10:53:07.099Z"
     }
   ]
 }
