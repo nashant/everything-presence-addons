@@ -227,7 +227,7 @@ This descriptor is what S04 will build from zone assignments + device profiles. 
   - Estimate: 1h
   - Files: everything-presence-mmwave-configurator/backend/src/ha/roomDeviceService.ts, everything-presence-mmwave-configurator/backend/src/ha/wsReadTransport.ts, everything-presence-mmwave-configurator/backend/src/ha/readTransport.ts, everything-presence-mmwave-configurator/backend/src/ha/restReadTransport.ts, everything-presence-mmwave-configurator/backend/src/__tests__/unit/roomDeviceService.test.ts
   - Verify: cd everything-presence-mmwave-configurator && npx vitest run src/__tests__/unit/roomDeviceService.test.ts
-- [ ] **T04: Integration test: verify room device + zone entities appear in HA via Docker dev stack** — ## Description
+- [x] **T04: Created integration test proving full MQTT discovery lifecycle — device creation, entity registration, and cleanup removal — verified against live HA instance via Docker dev stack** — ## Description
 
 Create an integration test script that boots the MQTT client, publishes discovery messages for a hardcoded test room, and verifies the virtual device + entities appear in HA's device and entity registries. Also verify cleanup removes them.
 
