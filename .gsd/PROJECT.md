@@ -12,14 +12,17 @@ A rewrite of the Everything Presence mmWave configurator with a room-first archi
 
 ## Current State
 
-- Branch: `feat/multi-device-rooms` (M003 in progress)
+- Branch: `feat/multi-device-rooms` (M003 in progress — S01+S02 complete, S03 next)
 - **M001 complete** — Room-first configurator rewrite delivered
 - **M002 complete** — RoomCanvas generic item system: 4 extracted renderers, unified drag state machine, RoomCanvas reduced from 1988 to 894 lines
+- **M003/S01 complete** — Backend sensors[] data model + migration
+- **M003/S02 complete** — Frontend multi-sensor rendering: SensorRenderInfo/SENSOR_COLORS types, DeviceItemRenderer color parameterization, RoomCanvas sensorPlacements prop with per-sensor drag, RoomBuilderPage wiring with profile lookup and backward compat
 - Dashboard landing page with rooms grouped by floor
 - HA import (floors + areas), manual room/floor creation
 - EditorSidebar with pop-out panels (Walls, Devices, Zones, Doors, Furniture, Settings)
 - Inline device attachment + entity discovery (no wizard navigation)
 - Zone editing embedded in Room Builder
+- Multi-sensor rooms render N colored radar cones with independent placement
 - Dev stack: Docker compose with HA 2026.2, Mosquitto, mock devices
 - Backend: 0 TS errors, 16/16 vitest tests pass
 - Frontend: 124 TS errors (non-blocking, Vite build succeeds), 52 canvas module tests pass

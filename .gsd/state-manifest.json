@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "exported_at": "2026-03-31T05:17:23.372Z",
+  "exported_at": "2026-03-31T05:29:39.880Z",
   "milestones": [
     {
       "id": "M001",
@@ -211,16 +211,16 @@
       "milestone_id": "M003",
       "id": "S02",
       "title": "Frontend data model + RoomCanvas multi-sensor rendering",
-      "status": "pending",
+      "status": "complete",
       "risk": "medium",
       "depends": [
         "S01"
       ],
       "demo": "Frontend types match backend `sensors[]`. RoomCanvas renders N colored radar cones. Room builder shows all sensors but device management UI is not yet wired — this proves rendering works.",
       "created_at": "2026-03-30T19:58:35.779Z",
-      "completed_at": null,
-      "full_summary_md": "",
-      "full_uat_md": "",
+      "completed_at": "2026-03-31T05:19:26.861Z",
+      "full_summary_md": "---\nid: S02\nparent: M003\nmilestone: M003\nprovides:\n  - SensorRenderInfo type + SENSOR_COLORS palette for downstream UI components\n  - RoomCanvas sensorPlacements/onSensorChange/onSensorSelect prop interface\n  - RoomBuilderPage sensor→SensorRenderInfo mapping with profile lookup pattern\n  - DeviceItemRenderer color parameterization for per-sensor visual distinction\nrequires:\n  - slice: S01\n    provides: Backend sensors[] data model — rooms returned with sensors array, API accepts both old and new format\naffects:\n  - S03\nkey_files:\n  - everything-presence-mmwave-configurator/frontend/src/api/types.ts\n  - everything-presence-mmwave-configurator/frontend/src/components/canvas/types.ts\n  - everything-presence-mmwave-configurator/frontend/src/components/canvas/DeviceItemRenderer.tsx\n  - everything-presence-mmwave-configurator/frontend/src/components/RoomCanvas.tsx\n  - everything-presence-mmwave-configurator/frontend/src/pages/RoomBuilderPage.tsx\n  - everything-presence-mmwave-configurator/frontend/src/api/rooms.ts\nkey_decisions:\n  - D008: Backward compat — devicePlacement synced from sensors[0].placement; sensorPlacements undefined when sensors absent to preserve single-device fallback\n  - D009: showDevice condition expanded to accept sensors[] without legacy deviceId\n  - Radar fill derived as ${color}22 hex alpha — requires 6-digit hex color params\n  - selectedSensorId wired but underscore-prefixed — visual highlighting deferred to S03\npatterns_established:\n  - Multi-sensor rendering via sensorPlacements prop on RoomCanvas — array of SensorRenderInfo with per-sensor color, fov, range, placement\n  - Color parameterization in DeviceItemRenderer — no more hardcoded colors, all passed via color prop with hex alpha derivation for fills\n  - Backward compat gate: sensorPlacements === undefined triggers single-device fallback path in both RoomCanvas and RoomBuilderPage\n  - SENSOR_COLORS palette cycling: 5 colors assigned by index % length for visual distinction\nobservability_surfaces:\n  - none\ndrill_down_paths:\n  - .gsd/milestones/M003/slices/S02/tasks/T01-SUMMARY.md\n  - .gsd/milestones/M003/slices/S02/tasks/T02-SUMMARY.md\n  - .gsd/milestones/M003/slices/S02/tasks/T03-SUMMARY.md\n  - .gsd/milestones/M003/slices/S02/tasks/T04-SUMMARY.md\n  - .gsd/milestones/M003/slices/S02/tasks/T05-SUMMARY.md\n  - .gsd/milestones/M003/slices/S02/tasks/T06-SUMMARY.md\nduration: \"\"\nverification_result: passed\ncompleted_at: 2026-03-31T05:19:26.861Z\nblocker_discovered: false\n---\n\n# S02: Frontend data model + RoomCanvas multi-sensor rendering\n\n**Frontend types, RoomCanvas multi-sensor rendering loop, and RoomBuilderPage wiring deliver N colored radar cones per room with independent drag, while all single-device callers remain unbroken.**\n\n## What Happened\n\nSix tasks across branch repair, type definitions, renderer parameterization, canvas integration, and browser verification.\n\nT01 discovered the S02 branch was forked from main (missing all M001/M002/S01 work) and recreated it from feat/multi-device-rooms. T02 added SensorAttachment to api/types.ts and SensorRenderInfo + SENSOR_COLORS + sensorId on DeviceDragState to canvas/types.ts. T03 parameterized DeviceItemRenderer's color (replacing hardcoded #22c55e/#3b82f6) and added sensorPlacements/onSensorChange/onSensorSelect props to RoomCanvas with a multi-sensor rendering loop and per-sensor drag handling — all falling back to the original single-device path when sensorPlacements is undefined. T04 wired RoomBuilderPage: a useMemo builds SensorRenderInfo[] from room.sensors[] with profile lookup for fov/range/icon, SENSOR_COLORS cycling, and centroid default placement. Drag callbacks persist sensor positions via PUT /api/rooms and sync devicePlacement from sensors[0] for backward compat. The Devices sidebar badge now shows the actual sensor count.\n\nT05/T06 ran browser verification and fixed two issues: api/rooms.ts had an incorrect import path (../types → ./types), and showDevice required deviceId which sensor-only rooms lack. After fixing to also check sensors[].length, two distinct-colored radar cones (green + amber) rendered in a multi-sensor room. Single-device rooms continued working via the fallback path. Zero console errors.\n\n## Verification\n\nTypeScript: npx tsc --noEmit produces 124 pre-existing errors, zero new errors from S02 work. All S02 files compile clean. Browser: multi-sensor room renders two distinct colored radar cones (green #22c55e, amber #f59e0b). Single-device room renders one green cone via fallback path. showDevice condition correctly handles both deviceId and sensors[] presence. Zero browser console errors.\n\n## Requirements Advanced\n\nNone.\n\n## Requirements Validated\n\nNone.\n\n## New Requirements Surfaced\n\nNone.\n\n## Requirements Invalidated or Re-scoped\n\nNone.\n\n## Deviations\n\nT06 fixed api/rooms.ts import path (../types → ./types) and showDevice condition to accept sensors[] without deviceId — neither was in the original plan but both were required for rendering to work.\n\n## Known Limitations\n\n124 pre-existing TypeScript errors in files outside S02 scope. Drag persistence for multi-sensor rooms not tested end-to-end via page reload in browser (TypeScript wiring verified). Selection highlighting for selectedSensorId is wired but uses underscore prefix — visual highlighting deferred to S03.\n\n## Follow-ups\n\nS03 will wire the device management UI (Add Device, sensor selection, drag, remove). Selection highlighting for the active sensor should be implemented there.\n\n## Files Created/Modified\n\n- `everything-presence-mmwave-configurator/frontend/src/api/types.ts` — Added SensorAttachment interface and sensors?: SensorAttachment[] to RoomConfig\n- `everything-presence-mmwave-configurator/frontend/src/components/canvas/types.ts` — Added SensorRenderInfo, SENSOR_COLORS, sensorId on DeviceDragState, DevicePlacement import\n- `everything-presence-mmwave-configurator/frontend/src/components/canvas/DeviceItemRenderer.tsx` — Parameterized color prop (replacing hardcoded #22c55e/#3b82f6), added sensorId to DeviceInteractiveParams\n- `everything-presence-mmwave-configurator/frontend/src/components/RoomCanvas.tsx` — Added sensorPlacements/selectedSensorId/onSensorChange/onSensorSelect props, multi-sensor rendering loop, per-sensor drag handling, multi-sensor isPointInSensorRange\n- `everything-presence-mmwave-configurator/frontend/src/pages/RoomBuilderPage.tsx` — Added sensorPlacements useMemo, handleSensorChange/handleSensorSelect callbacks, showDevice sensors[] condition, badge update\n- `everything-presence-mmwave-configurator/frontend/src/api/rooms.ts` — Fixed import path from ../types to ./types\n",
+      "full_uat_md": "# S02: Frontend data model + RoomCanvas multi-sensor rendering — UAT\n\n**Milestone:** M003\n**Written:** 2026-03-31T05:19:26.861Z\n\n# S02 UAT: Frontend data model + RoomCanvas multi-sensor rendering\n\n## Preconditions\n- Backend running with S01 sensors[] migration applied\n- At least one room with 2+ sensors created via API (POST /api/rooms with sensors array)\n- At least one room with a single device via legacy deviceId field\n- Frontend dev server running\n\n## Test Cases\n\n### TC1: Multi-sensor room renders multiple colored radar cones\n1. Navigate to Dashboard → click on the multi-sensor room\n2. Room Builder opens with the room's walls/doors/furniture visible\n3. **Expected:** Two radar cones render on the canvas — first sensor in green (#22c55e), second in amber (#f59e0b)\n4. Each cone has the correct FOV angle and range from its device profile\n5. Cones are semi-transparent (fill opacity via hex alpha `22`)\n\n### TC2: Single-device room renders normally via fallback\n1. Navigate to Dashboard → click on a room with only a legacy deviceId (no sensors[])\n2. **Expected:** One green radar cone renders at the device placement position\n3. No errors in browser console\n4. The rendering is identical to pre-S02 behavior\n\n### TC3: Devices sidebar badge shows correct sensor count\n1. Open a multi-sensor room in Room Builder\n2. Look at the Devices section in the left sidebar\n3. **Expected:** Badge shows \"2\" (or whatever the actual sensor count is), not hardcoded \"1\"\n\n### TC4: TypeScript compilation\n1. Run `cd everything-presence-mmwave-configurator/frontend && npx tsc --noEmit`\n2. **Expected:** No new errors beyond the 124 pre-existing ones\n3. Specifically verify: no errors in api/types.ts, canvas/types.ts, DeviceItemRenderer.tsx, RoomCanvas.tsx, RoomBuilderPage.tsx, api/rooms.ts\n\n### TC5: showDevice handles sensor-only rooms\n1. Create a room via API with sensors[] but NO top-level deviceId\n2. Open that room in Room Builder with the device icon toggle enabled\n3. **Expected:** Radar cones render (showDevice evaluates to true from sensors[].length)\n4. **Regression check:** If toggle is off, no cones render regardless of sensors\n\n### TC6: Existing callers compile without changes\n1. Open ZoneEditorPage.tsx, WizardPage.tsx, LiveTrackingPage.tsx in editor\n2. These files do NOT pass sensorPlacements to RoomCanvas\n3. **Expected:** They still compile — RoomCanvas falls back to single-device rendering when sensorPlacements is undefined\n\n## Edge Cases\n\n### EC1: Room with empty sensors array\n1. Create a room with `sensors: []` via API\n2. Open in Room Builder\n3. **Expected:** No radar cones render, no console errors. sensorPlacements memo returns undefined (not empty array), triggering fallback path.\n\n### EC2: Room with >5 sensors (color cycling)\n1. Create a room with 6+ sensors via API\n2. Open in Room Builder\n3. **Expected:** Colors cycle through SENSOR_COLORS palette. Sensor 6 gets the same color as sensor 1 (index % 5). No crash or missing cones.\n\n### EC3: Sensor without profile match\n1. Create a sensor with a profileId that doesn't match any loaded profile\n2. Open room in Room Builder\n3. **Expected:** Sensor renders with default FOV/range values (from SensorRenderInfo defaults). No crash.\n",
       "goal": "Frontend types match backend `sensors[]`. RoomCanvas renders N colored radar cones with independent drag. All existing single-device callers remain unbroken.",
       "success_criteria": "",
       "proof_level": "",
@@ -243,11 +243,11 @@
       "completed_at": null,
       "full_summary_md": "",
       "full_uat_md": "",
-      "goal": "",
-      "success_criteria": "",
-      "proof_level": "",
-      "integration_closure": "",
-      "observability_impact": "",
+      "goal": "Devices panel lists all sensors with colored cards, \"Add Device\" appends new sensors to the sensors[] array, each sensor can be selected (with canvas highlighting), edited via DeviceEditor, and removed individually. Full multi-device room management works end-to-end.",
+      "success_criteria": "## Must-Haves\n\n- `linkedDeviceIds` collects device IDs from both `r.deviceId` and `r.sensors[].deviceId` — prevents double-linking\n- `hasDevice` replaced with sensor-count-aware gating — \"Add Device\" button enabled when available devices exist regardless of how many sensors are already linked\n- Devices panel renders a card per sensor from `selectedRoom.sensors[]` with SENSOR_COLORS dot, device name, and profile label\n- EntityDiscovery `onComplete` appends a `SensorAttachment` to `sensors[]` instead of setting singular `deviceId/profileId`\n- Backward compat: `sensors[0]` synced to singular `deviceId/profileId/devicePlacement` fields\n- Per-sensor card click opens DeviceEditor for that specific sensor\n- Canvas tap on sensor (via `handleSensorSelect`) selects that sensor in panel + DeviceEditor\n- `selectedSensorId` passed to RoomCanvas and used for visual selection ring/highlight\n- Per-sensor remove splices from `sensors[]` and cleans up singular fields if last sensor removed\n- TypeScript compiles with zero new errors from S03 files\n\n## Proof Level\n\n- This slice proves: integration\n- Real runtime required: yes\n- Human/UAT required: yes (browser verification of multi-sensor device management flow)\n\n## Verification\n\n- `cd everything-presence-mmwave-configurator && npx tsc --noEmit 2>&1 | grep -E \"RoomBuilderPage|DeviceEditor|RoomCanvas|DeviceItemRenderer\"` — zero errors from S03 files\n- Browser verification at localhost:5173:\n  1. Open room with 2+ sensors → both sensor cards visible in Devices panel with correct SENSOR_COLORS\n  2. Click \"Add Device\" → EntityDiscovery → new sensor appended → additional radar cone renders\n  3. Click sensor card → DeviceEditor opens with that sensor's placement data\n  4. Click sensor on canvas → same sensor highlights (selection ring) + DeviceEditor opens\n  5. Remove a sensor via trash icon → sensor disappears from panel and canvas → remaining sensors unaffected\n  6. Save room → reload → sensors persist correctly\n\n## Integration Closure\n\n- Upstream surfaces consumed: S01 backend `sensors[]` data model, S02 `SensorRenderInfo`/`SENSOR_COLORS`/`sensorPlacements` prop interface, `handleSensorChange`/`handleSensorSelect` callbacks\n- New wiring introduced: Devices panel → `sensors[]` read/write loop, `selectedSensorId` → RoomCanvas visual highlighting, DeviceEditor sensor-aware props\n- What remains before the milestone is truly usable end-to-end: nothing — S03 is the final slice of M003",
+      "proof_level": "integration — real runtime browser verification required",
+      "integration_closure": "S03 wires the final UI layer on top of S01 (backend sensors[] model) and S02 (frontend rendering infrastructure). After S03, multi-device room management works end-to-end: add, place, select, edit, remove sensors. Nothing remains for M003.",
+      "observability_impact": "None — frontend-only UI wiring with no new runtime signals, APIs, or error surfaces beyond existing patterns.",
       "sequence": 0,
       "replan_triggered_at": null
     }
@@ -1304,6 +1304,130 @@
       "observability_impact": "",
       "full_plan_md": "",
       "sequence": 0
+    },
+    {
+      "milestone_id": "M003",
+      "slice_id": "S03",
+      "id": "T01",
+      "title": "Replaced single-device hasDevice gating with sensorCount, rewrote Devices panel to render per-sensor colored cards from sensors[], and updated EntityDiscovery onComplete to append new SensorAttachment to the array",
+      "status": "complete",
+      "one_liner": "Replaced single-device hasDevice gating with sensorCount, rewrote Devices panel to render per-sensor colored cards from sensors[], and updated EntityDiscovery onComplete to append new SensorAttachment to the array",
+      "narrative": "Six changes to RoomBuilderPage.tsx: (1) linkedDeviceIds now collects from both r.deviceId and r.sensors[].deviceId. (2) sensorCount useMemo replaces all 7 hasDevice references. (3) Devices panel default state renders .map() over sensors[] with SENSOR_COLORS dots, device name, profile label, hover trash icon, and click placeholder. Legacy fallback for rooms with deviceId but no sensors[]. (4) Sidebar subtitle shows dynamic count. (5) EntityDiscovery onComplete appends SensorAttachment to sensors[] and syncs singular fields from sensors[0]. (6) SensorAttachment import added.",
+      "verification_result": "npx tsc --noEmit: zero errors from RoomBuilderPage.tsx (zero project-wide). grep -c hasDevice returns 0. grep -q SENSOR_COLORS confirms import present.",
+      "duration": "",
+      "completed_at": "2026-03-31T05:29:39.869Z",
+      "blocker_discovered": false,
+      "deviations": "None.",
+      "known_issues": "None.",
+      "key_files": [
+        "everything-presence-mmwave-configurator/frontend/src/pages/RoomBuilderPage.tsx"
+      ],
+      "key_decisions": [
+        "Add Device enabled whenever availableDevices.length > 0, no longer gated by single-device boolean",
+        "EntityDiscovery onComplete appends SensorAttachment to sensors[] and syncs singular fields from sensors[0] for backward compat"
+      ],
+      "full_summary_md": "---\nid: T01\nparent: S03\nmilestone: M003\nkey_files:\n  - everything-presence-mmwave-configurator/frontend/src/pages/RoomBuilderPage.tsx\nkey_decisions:\n  - Add Device enabled whenever availableDevices.length > 0, no longer gated by single-device boolean\n  - EntityDiscovery onComplete appends SensorAttachment to sensors[] and syncs singular fields from sensors[0] for backward compat\nduration: \"\"\nverification_result: passed\ncompleted_at: 2026-03-31T05:29:39.869Z\nblocker_discovered: false\n---\n\n# T01: Replaced single-device hasDevice gating with sensorCount, rewrote Devices panel to render per-sensor colored cards from sensors[], and updated EntityDiscovery onComplete to append new SensorAttachment to the array\n\n**Replaced single-device hasDevice gating with sensorCount, rewrote Devices panel to render per-sensor colored cards from sensors[], and updated EntityDiscovery onComplete to append new SensorAttachment to the array**\n\n## What Happened\n\nSix changes to RoomBuilderPage.tsx: (1) linkedDeviceIds now collects from both r.deviceId and r.sensors[].deviceId. (2) sensorCount useMemo replaces all 7 hasDevice references. (3) Devices panel default state renders .map() over sensors[] with SENSOR_COLORS dots, device name, profile label, hover trash icon, and click placeholder. Legacy fallback for rooms with deviceId but no sensors[]. (4) Sidebar subtitle shows dynamic count. (5) EntityDiscovery onComplete appends SensorAttachment to sensors[] and syncs singular fields from sensors[0]. (6) SensorAttachment import added.\n\n## Verification\n\nnpx tsc --noEmit: zero errors from RoomBuilderPage.tsx (zero project-wide). grep -c hasDevice returns 0. grep -q SENSOR_COLORS confirms import present.\n\n## Verification Evidence\n\n| # | Command | Exit Code | Verdict | Duration |\n|---|---------|-----------|---------|----------|\n| 1 | `cd everything-presence-mmwave-configurator && npx tsc --noEmit 2>&1 | grep -E 'RoomBuilderPage\\.tsx' | head -5` | 0 | ✅ pass | 4800ms |\n| 2 | `grep -c 'hasDevice' everything-presence-mmwave-configurator/frontend/src/pages/RoomBuilderPage.tsx` | 0 | ✅ pass (output: 0) | 50ms |\n| 3 | `grep -q 'SENSOR_COLORS' everything-presence-mmwave-configurator/frontend/src/pages/RoomBuilderPage.tsx && echo 'OK'` | 0 | ✅ pass | 50ms |\n\n\n## Deviations\n\nNone.\n\n## Known Issues\n\nNone.\n\n## Files Created/Modified\n\n- `everything-presence-mmwave-configurator/frontend/src/pages/RoomBuilderPage.tsx`\n",
+      "description": "## Description\n\nThe Devices panel is still entirely single-device: `linkedDeviceIds` only checks `r.deviceId`, `hasDevice` gates on singular `deviceId` (disabling Add Device after one device), only one device card renders, and EntityDiscovery's `onComplete` sets singular fields (would overwrite first device). This task fixes all of these to work with the `sensors[]` array.\n\n## Steps\n\n1. **Fix `linkedDeviceIds`** (line ~1107 of RoomBuilderPage.tsx): Update the `useMemo` to collect device IDs from both `r.deviceId` AND `r.sensors?.map(s => s.deviceId)`. Use a `Set` that merges both sources. This prevents a device already in `sensors[]` from appearing as available.\n\n2. **Replace `hasDevice` gating**: Replace `const hasDevice = !!selectedRoom?.deviceId` with `const sensorCount = (selectedRoom?.sensors?.length ?? 0) + (selectedRoom?.deviceId && !selectedRoom?.sensors?.some(s => s.deviceId === selectedRoom.deviceId) ? 1 : 0)` — or simpler: check `selectedRoom?.sensors?.length ?? (selectedRoom?.deviceId ? 1 : 0)`. The key constraint: \"Add Device\" button must be enabled whenever `availableDevices.length > 0` AND `selectedRoom` exists — no longer gated by a boolean hasDevice. Disable only when `!selectedRoom || availableDevices.length === 0`.\n\n3. **Rewrite Devices panel default state** (line ~1625–1675): Replace the single-device card block with a loop over `selectedRoom.sensors ?? []`. Each sensor card shows:\n   - A SENSOR_COLORS dot (import from `canvas/types.ts`, use `SENSOR_COLORS[index % SENSOR_COLORS.length]`)\n   - Device name (look up from `devices` array by `sensor.deviceId`)\n   - Profile label (look up from `profiles` by `sensor.profileId`)\n   - Hover-visible trash icon for remove (wire remove in T02)\n   - Click handler opens DeviceEditor for that sensor (wire in T02 — for now, just `console.log` or noop)\n   Also handle the legacy fallback: if `selectedRoom.deviceId` exists but `sensors[]` is empty, render one card for the legacy device.\n\n4. **Update sidebar subtitle**: Change `subtitle={hasDevice ? '1 device' : 'Add a device to this room'}` to use `sensorCount` — e.g., `subtitle={sensorCount > 0 ? \\`${sensorCount} device${sensorCount !== 1 ? 's' : ''}\\` : 'Add a device to this room'}`.\n\n5. **Update EntityDiscovery `onComplete`** (line ~1556): Instead of setting singular `deviceId/profileId/entityMappings/entityNamePrefix/devicePlacement`, append a new `SensorAttachment` to `sensors[]`:\n   ```\n   const newSensor: SensorAttachment = {\n     deviceId: pendingDevice.id,\n     profileId: pendingProfile.id,\n     placement: selectedRoom.devicePlacement ?? centroidDefault,\n   };\n   const nextSensors = [...(selectedRoom.sensors ?? []), newSensor];\n   ```\n   Also set singular fields from `nextSensors[0]` for backward compat (same pattern as `handleSensorChange`). Store `entityMappings` and `entityNamePrefix` at the room level (they're room-level concepts, not per-sensor).\n\n6. **Verify**: Run `npx tsc --noEmit` and confirm zero new errors from RoomBuilderPage.tsx. Grep for the old `hasDevice` variable to confirm it's fully replaced.\n\n## Must-Haves\n\n- [ ] `linkedDeviceIds` collects from both `r.deviceId` and `r.sensors[].deviceId`\n- [ ] \"Add Device\" button enabled when available devices exist, regardless of current sensor count\n- [ ] Devices panel renders a card per sensor from `sensors[]` with colored dot, name, and profile\n- [ ] EntityDiscovery onComplete appends to `sensors[]` not singular fields\n- [ ] Backward compat: singular `deviceId/profileId/devicePlacement` synced from `sensors[0]`\n- [ ] TypeScript compiles with zero new errors from S03 files\n\n## Verification\n\n- `cd everything-presence-mmwave-configurator && npx tsc --noEmit 2>&1 | grep -c 'RoomBuilderPage'` returns 0 (no new TS errors in this file)\n- `grep -c 'hasDevice' everything-presence-mmwave-configurator/frontend/src/pages/RoomBuilderPage.tsx` returns 0 (old guard fully replaced)\n- `grep -q 'SENSOR_COLORS' everything-presence-mmwave-configurator/frontend/src/pages/RoomBuilderPage.tsx && echo 'OK'` confirms sensor colors imported and used",
+      "estimate": "1h",
+      "files": [
+        "everything-presence-mmwave-configurator/frontend/src/pages/RoomBuilderPage.tsx"
+      ],
+      "verify": "cd everything-presence-mmwave-configurator && npx tsc --noEmit 2>&1 | grep -E 'RoomBuilderPage\\.tsx' | head -5; echo \"---\"; grep -c 'hasDevice' frontend/src/pages/RoomBuilderPage.tsx; echo '(should be 0)'",
+      "inputs": [
+        "`everything-presence-mmwave-configurator/frontend/src/pages/RoomBuilderPage.tsx` — current single-device Devices panel, linkedDeviceIds, hasDevice, EntityDiscovery onComplete",
+        "`everything-presence-mmwave-configurator/frontend/src/components/canvas/types.ts` — SENSOR_COLORS palette to import",
+        "`everything-presence-mmwave-configurator/frontend/src/api/types.ts` — SensorAttachment interface"
+      ],
+      "expected_output": [
+        "`everything-presence-mmwave-configurator/frontend/src/pages/RoomBuilderPage.tsx` — rewritten Devices panel with multi-sensor cards, fixed linkedDeviceIds, Add Device appends to sensors[]"
+      ],
+      "observability_impact": "",
+      "full_plan_md": "",
+      "sequence": 0
+    },
+    {
+      "milestone_id": "M003",
+      "slice_id": "S03",
+      "id": "T02",
+      "title": "Wire per-sensor selection, DeviceEditor sensor context, remove, and canvas highlighting",
+      "status": "pending",
+      "one_liner": "",
+      "narrative": "",
+      "verification_result": "",
+      "duration": "",
+      "completed_at": null,
+      "blocker_discovered": false,
+      "deviations": "",
+      "known_issues": "",
+      "key_files": [],
+      "key_decisions": [],
+      "full_summary_md": "",
+      "description": "## Description\n\nT01 delivered the Devices panel with sensor cards and Add Device flow. This task wires the remaining interactions: clicking a sensor card opens DeviceEditor for that specific sensor, tapping a sensor on canvas highlights it, DeviceEditor shows sensor-specific placement data, per-sensor remove works, and the canvas renders a selection ring around the active sensor.\n\n## Steps\n\n1. **Per-sensor card click → DeviceEditor**: In the sensor card's `onClick` handler (from T01), set `setSelectedItem({ type: 'device', id: sensor.deviceId })` and `setShowDeviceEditor(true)`. The `handleSensorSelect` callback already does this for canvas taps — sensor card clicks should mirror the same behavior.\n\n2. **Update DeviceEditor props for sensor context**: Add a `sensorId` prop to the `DeviceEditorProps` interface in DeviceEditor.tsx. Also add an optional `color` prop (string) for visual identification. In the header, render the color dot next to the device name. The calling code in RoomBuilderPage.tsx must look up the active sensor from `selectedRoom.sensors` using `selectedItem?.id`, find its index for SENSOR_COLORS, find its placement, and pass sensor-specific props to DeviceEditor.\n\n3. **Wire DeviceEditor `onPlacementChange` for sensors**: Currently updates `selectedRoom.devicePlacement`. For sensor mode, it must update the specific sensor's placement in `sensors[]` (same pattern as `handleSensorChange`). The `onPlacementChange` callback should update `sensors[sensorIndex].placement` and sync `devicePlacement` from `sensors[0]` for backward compat.\n\n4. **Wire DeviceEditor `onUnlink` for sensors**: Currently clears singular `deviceId/profileId/entityMappings/entityNamePrefix`. For sensor mode, splice the sensor from `sensors[]`. If it was the last sensor, also clear singular legacy fields. If it was `sensors[0]`, sync the new `sensors[0]` to singular fields.\n\n5. **Per-sensor remove via trash icon on card**: Wire the trash button on each sensor card (rendered in T01) to splice that sensor from `sensors[]`. Same logic as step 4's `onUnlink` — can share a `removeSensor(sensorId)` helper function.\n\n6. **Pass `selectedSensorId` to RoomCanvas**: In RoomBuilderPage.tsx where `<RoomCanvas>` is rendered (~line 1340), pass `selectedSensorId={selectedItem?.type === 'device' ? selectedItem.id : undefined}`. Currently it's not passed at all.\n\n7. **Add selection ring in RoomCanvas rendering**: In RoomCanvas.tsx, rename `_selectedSensorId` to `selectedSensorId` (remove the underscore prefix). In the multi-sensor `renderDeviceInteractive` loop (~line 937), pass `selected={sensor.id === selectedSensorId}` to the render call. In `DeviceItemRenderer.tsx`, add a `selected?: boolean` to `DeviceInteractiveParams`. When `selected` is true, render an additional circle (or ring) around the device icon — e.g., a dashed stroke circle with the sensor's color at slightly larger radius than the icon.\n\n8. **Update `showDeviceEditor` gating**: The DeviceEditor render block (~line 2266) currently checks `hasDevice` (which T01 replaced). Update it to check whether a sensor is selected: `showDeviceEditor && selectedSensor && selectedRoom`. Where `selectedSensor` is derived from `selectedRoom.sensors?.find(s => s.deviceId === selectedItem?.id)`.\n\n## Must-Haves\n\n- [ ] Sensor card click opens DeviceEditor for that specific sensor\n- [ ] Canvas tap on sensor (handleSensorSelect) opens DeviceEditor + highlights sensor\n- [ ] DeviceEditor shows correct placement for the selected sensor\n- [ ] DeviceEditor onPlacementChange updates the specific sensor's placement in sensors[]\n- [ ] DeviceEditor onUnlink removes the specific sensor from sensors[]\n- [ ] Trash icon on sensor card removes that sensor\n- [ ] selectedSensorId passed to RoomCanvas and used for visual selection ring\n- [ ] Removing last sensor clears singular legacy fields\n- [ ] TypeScript compiles with zero new errors\n\n## Verification\n\n- `cd everything-presence-mmwave-configurator && npx tsc --noEmit 2>&1 | grep -E '(RoomBuilderPage|DeviceEditor|RoomCanvas|DeviceItemRenderer)\\.tsx' | head -10` — zero errors from S03 files\n- `grep -q 'selectedSensorId' everything-presence-mmwave-configurator/frontend/src/components/RoomCanvas.tsx && ! grep -q '_selectedSensorId' everything-presence-mmwave-configurator/frontend/src/components/RoomCanvas.tsx && echo 'OK'` — underscore prefix removed\n- `grep -q 'selected.*boolean' everything-presence-mmwave-configurator/frontend/src/components/canvas/DeviceItemRenderer.tsx && echo 'OK'` — selected prop added",
+      "estimate": "1h",
+      "files": [
+        "everything-presence-mmwave-configurator/frontend/src/pages/RoomBuilderPage.tsx",
+        "everything-presence-mmwave-configurator/frontend/src/components/DeviceEditor.tsx",
+        "everything-presence-mmwave-configurator/frontend/src/components/RoomCanvas.tsx",
+        "everything-presence-mmwave-configurator/frontend/src/components/canvas/DeviceItemRenderer.tsx"
+      ],
+      "verify": "cd everything-presence-mmwave-configurator && npx tsc --noEmit 2>&1 | grep -E '(RoomBuilderPage|DeviceEditor|RoomCanvas|DeviceItemRenderer)\\.tsx' | head -10; echo '---'; grep -c '_selectedSensorId' frontend/src/components/RoomCanvas.tsx; echo '(should be 0)'",
+      "inputs": [
+        "`everything-presence-mmwave-configurator/frontend/src/pages/RoomBuilderPage.tsx` — T01 output with multi-sensor Devices panel and Add Device flow",
+        "`everything-presence-mmwave-configurator/frontend/src/components/DeviceEditor.tsx` — current singular-device DeviceEditor",
+        "`everything-presence-mmwave-configurator/frontend/src/components/RoomCanvas.tsx` — has selectedSensorId prop but prefixed with underscore",
+        "`everything-presence-mmwave-configurator/frontend/src/components/canvas/DeviceItemRenderer.tsx` — renderDeviceInteractive function"
+      ],
+      "expected_output": [
+        "`everything-presence-mmwave-configurator/frontend/src/pages/RoomBuilderPage.tsx` — per-sensor selection, remove, DeviceEditor wiring, selectedSensorId prop passed to RoomCanvas",
+        "`everything-presence-mmwave-configurator/frontend/src/components/DeviceEditor.tsx` — sensorId and color props added, sensor-aware header",
+        "`everything-presence-mmwave-configurator/frontend/src/components/RoomCanvas.tsx` — selectedSensorId active (no underscore), passed to render loop",
+        "`everything-presence-mmwave-configurator/frontend/src/components/canvas/DeviceItemRenderer.tsx` — selected prop with visual selection ring"
+      ],
+      "observability_impact": "",
+      "full_plan_md": "",
+      "sequence": 0
+    },
+    {
+      "milestone_id": "M003",
+      "slice_id": "S03",
+      "id": "T03",
+      "title": "Browser verification of complete multi-sensor device management flow",
+      "status": "pending",
+      "one_liner": "",
+      "narrative": "",
+      "verification_result": "",
+      "duration": "",
+      "completed_at": null,
+      "blocker_discovered": false,
+      "deviations": "",
+      "known_issues": "",
+      "key_files": [],
+      "key_decisions": [],
+      "full_summary_md": "",
+      "description": "## Description\n\nT01 and T02 implemented the full multi-sensor device management UI. This task verifies everything works end-to-end in a running browser, fixing any issues discovered.\n\n## Steps\n\n1. **Start the dev stack**: Run `cd dev && docker compose -f docker-compose.dev.yaml up -d --build` to start the full stack. Wait for the frontend at localhost:5173 (or the configured port) to be accessible.\n\n2. **Verify Devices panel renders sensor cards**: Navigate to a room that has 2+ sensors (created during S02 testing, or create one via API). Open the Devices panel. Confirm each sensor has a colored dot matching SENSOR_COLORS, shows the device name, and shows the profile label.\n\n3. **Verify Add Device flow**: Click \"Add Device\". Confirm the device picker shows only devices not already linked to any room. Select a device → EntityDiscovery completes → new sensor appears in the panel → additional radar cone renders on canvas.\n\n4. **Verify per-sensor selection**: Click a sensor card → DeviceEditor opens with that sensor's placement. Click a different sensor on the canvas → that sensor highlights (selection ring visible) and DeviceEditor switches to show its placement.\n\n5. **Verify per-sensor remove**: Click the trash icon on a sensor card → that sensor disappears from the panel and its radar cone disappears from the canvas. Remaining sensors are unaffected.\n\n6. **Verify persistence**: Save the room (click Save button). Reload the page. Confirm all sensors are still present with correct placements.\n\n7. **Fix any issues found**: If any verification step fails, diagnose and fix the issue in the relevant source file, then re-verify.\n\n8. **Verify TypeScript still clean**: Run `cd everything-presence-mmwave-configurator && npx tsc --noEmit` and confirm zero new errors from S03 files.\n\n## Must-Haves\n\n- [ ] All 6 verification scenarios pass in browser\n- [ ] Zero new TypeScript errors\n- [ ] No browser console errors during the verification flow\n\n## Verification\n\n- `cd everything-presence-mmwave-configurator && npx tsc --noEmit 2>&1 | grep -E '(RoomBuilderPage|DeviceEditor|RoomCanvas|DeviceItemRenderer)\\.tsx' | wc -l` returns 0\n- Browser verification: all 6 scenarios pass (documented in task summary)",
+      "estimate": "45m",
+      "files": [
+        "everything-presence-mmwave-configurator/frontend/src/pages/RoomBuilderPage.tsx",
+        "everything-presence-mmwave-configurator/frontend/src/components/DeviceEditor.tsx",
+        "everything-presence-mmwave-configurator/frontend/src/components/RoomCanvas.tsx",
+        "everything-presence-mmwave-configurator/frontend/src/components/canvas/DeviceItemRenderer.tsx"
+      ],
+      "verify": "cd everything-presence-mmwave-configurator && npx tsc --noEmit 2>&1 | grep -E '(RoomBuilderPage|DeviceEditor|RoomCanvas|DeviceItemRenderer)\\.tsx' | wc -l | grep -q '^0$' && echo 'PASS' || echo 'FAIL'",
+      "inputs": [
+        "`everything-presence-mmwave-configurator/frontend/src/pages/RoomBuilderPage.tsx` — T02 output with complete multi-sensor device management",
+        "`everything-presence-mmwave-configurator/frontend/src/components/DeviceEditor.tsx` — T02 output with sensor-aware props",
+        "`everything-presence-mmwave-configurator/frontend/src/components/RoomCanvas.tsx` — T02 output with active selectedSensorId",
+        "`everything-presence-mmwave-configurator/frontend/src/components/canvas/DeviceItemRenderer.tsx` — T02 output with selection ring"
+      ],
+      "expected_output": [
+        "`everything-presence-mmwave-configurator/frontend/src/pages/RoomBuilderPage.tsx` — potentially patched if browser testing reveals issues",
+        "`everything-presence-mmwave-configurator/frontend/src/components/DeviceEditor.tsx` — potentially patched",
+        "`everything-presence-mmwave-configurator/frontend/src/components/RoomCanvas.tsx` — potentially patched",
+        "`everything-presence-mmwave-configurator/frontend/src/components/canvas/DeviceItemRenderer.tsx` — potentially patched"
+      ],
+      "observability_impact": "",
+      "full_plan_md": "",
+      "sequence": 0
     }
   ],
   "decisions": [
@@ -1388,6 +1512,18 @@
       "choice": "Sub-branches of `feat/multi-device-rooms` using double-dash: `feat/multi-device-rooms--M003-S02` etc.",
       "rationale": "Git refs can't have a branch be both a file and directory, so `/` separators don't work when `feat/multi-device-rooms` exists. Double-dash separator avoids the conflict. `feat/multi-device-rooms` is the integration branch.",
       "revisable": "No",
+      "made_by": "agent",
+      "superseded_by": null
+    },
+    {
+      "seq": 9,
+      "id": "D008",
+      "when_context": "M003/S02",
+      "scope": "arch",
+      "decision": "showDevice condition for multi-sensor rooms",
+      "choice": "showDevice true when room has sensors[] even without legacy deviceId field",
+      "rationale": "Multi-sensor rooms created via the sensors[] API don't have a top-level deviceId. Without this condition, radar cones wouldn't render. The check is `!!selectedRoom.deviceId || (selectedRoom.sensors?.length ?? 0) > 0`.",
+      "revisable": "Yes",
       "made_by": "agent",
       "superseded_by": null
     }
@@ -1590,6 +1726,39 @@
       "verdict": "✅ pass",
       "duration_ms": 0,
       "created_at": "2026-03-31T05:17:23.360Z"
+    },
+    {
+      "id": 19,
+      "task_id": "T01",
+      "slice_id": "S03",
+      "milestone_id": "M003",
+      "command": "cd everything-presence-mmwave-configurator && npx tsc --noEmit 2>&1 | grep -E 'RoomBuilderPage\\.tsx' | head -5",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 4800,
+      "created_at": "2026-03-31T05:29:39.869Z"
+    },
+    {
+      "id": 20,
+      "task_id": "T01",
+      "slice_id": "S03",
+      "milestone_id": "M003",
+      "command": "grep -c 'hasDevice' everything-presence-mmwave-configurator/frontend/src/pages/RoomBuilderPage.tsx",
+      "exit_code": 0,
+      "verdict": "✅ pass (output: 0)",
+      "duration_ms": 50,
+      "created_at": "2026-03-31T05:29:39.869Z"
+    },
+    {
+      "id": 21,
+      "task_id": "T01",
+      "slice_id": "S03",
+      "milestone_id": "M003",
+      "command": "grep -q 'SENSOR_COLORS' everything-presence-mmwave-configurator/frontend/src/pages/RoomBuilderPage.tsx && echo 'OK'",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 50,
+      "created_at": "2026-03-31T05:29:39.869Z"
     }
   ]
 }

@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState, useRef } from 'react'
 import { fetchDevices, fetchProfiles, ingressAware } from '../api/client';
 import { fetchRooms, updateRoom } from '../api/rooms';
 import { RoomCanvas, type CanvasItemType } from '../components/RoomCanvas';
-import { DiscoveredDevice, DeviceProfile, RoomConfig, LiveState, FurnitureInstance, FurnitureType, Door, Zone, ZoneRect, ZonePolygon, isZoneRect, isZonePolygon, DevicePlacement } from '../api/types';
+import { DiscoveredDevice, DeviceProfile, RoomConfig, LiveState, FurnitureInstance, FurnitureType, Door, Zone, ZoneRect, ZonePolygon, isZoneRect, isZonePolygon, DevicePlacement, SensorAttachment } from '../api/types';
 import { SensorRenderInfo, SENSOR_COLORS } from '../components/canvas/types';
 import { useWallDrawing } from '../hooks/useWallDrawing';
 import { FurnitureLibrary } from '../components/FurnitureLibrary';
@@ -1089,7 +1089,14 @@ export const RoomBuilderPage: React.FC<RoomBuilderPageProps> = ({
     rotationSuggestion.suggestedAngle === currentInstallationAngle;
   const isZeroSuggestion = rotationSuggestion?.suggestedAngle === 0;
 
-  const hasDevice = !!selectedRoom?.deviceId;
+  // Count of sensors attached to this room (including legacy singular deviceId)
+  const sensorCount = useMemo(() => {
+    if (!selectedRoom) return 0;
+    const sensorLen = selectedRoom.sensors?.length ?? 0;
+    if (sensorLen > 0) return sensorLen;
+    // Legacy fallback: room has deviceId but no sensors[]
+    return selectedRoom.deviceId ? 1 : 0;
+  }, [selectedRoom]);
   // Device linking flow state: 'pick' = select device, 'discover' = entity discovery
   const [deviceLinkStep, setDeviceLinkStep] = useState<'pick' | 'discover' | null>(null);
   const [showDeviceEditor, setShowDeviceEditor] = useState(false);
@@ -1104,10 +1111,16 @@ export const RoomBuilderPage: React.FC<RoomBuilderPageProps> = ({
     return profiles.find((p) => p.id === pendingDevice.profileId) ?? profiles[0] ?? null;
   }, [pendingDevice, profiles]);
   // Devices already linked to any room
-  const linkedDeviceIds = useMemo(
-    () => new Set(rooms.filter((r) => r.deviceId).map((r) => r.deviceId!)),
-    [rooms],
-  );
+  const linkedDeviceIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const r of rooms) {
+      if (r.deviceId) ids.add(r.deviceId);
+      if (r.sensors) {
+        for (const s of r.sensors) ids.add(s.deviceId);
+      }
+    }
+    return ids;
+  }, [rooms]);
   const availableDevices = useMemo(
     () => devices.filter((d) => !linkedDeviceIds.has(d.id)),
     [devices, linkedDeviceIds],
@@ -1118,7 +1131,7 @@ export const RoomBuilderPage: React.FC<RoomBuilderPageProps> = ({
   const zoneCount = selectedRoom?.zones?.length ?? 0;
 
   const sidebarSections: SectionDef[] = [
-    { id: 'devices', icon: '📡', label: 'Devices', badge: (selectedRoom?.sensors?.length ?? (hasDevice ? 1 : 0)) > 0 ? `${selectedRoom?.sensors?.length ?? 1}` : undefined },
+    { id: 'devices', icon: '📡', label: 'Devices', badge: sensorCount > 0 ? `${sensorCount}` : undefined },
     { id: 'zones', icon: '📐', label: 'Zones', badge: zoneCount > 0 ? `${zoneCount}` : undefined },
     { id: 'walls', icon: '🧱', label: 'Walls', badge: wallCount > 0 ? `${wallCount}` : undefined },
     { id: 'doors', icon: '🚪', label: 'Doors', badge: doorCount > 0 ? `${doorCount}` : undefined },
@@ -1263,7 +1276,7 @@ export const RoomBuilderPage: React.FC<RoomBuilderPageProps> = ({
               </option>
             ))}
           </select>
-          {selectedRoom && !hasDevice && (
+          {selectedRoom && sensorCount === 0 && (
             <span className="text-xs text-amber-400/80">No device linked</span>
           )}
           {selectedDevice && (
@@ -1537,7 +1550,7 @@ export const RoomBuilderPage: React.FC<RoomBuilderPageProps> = ({
           {activeSection === 'devices' && (
             <PopOutPanel
               title="Devices"
-              subtitle={hasDevice ? '1 device' : 'Add a device to this room'}
+              subtitle={sensorCount > 0 ? `${sensorCount} device${sensorCount !== 1 ? 's' : ''}` : 'Add a device to this room'}
               onClose={() => { setActiveSection(null); setDeviceLinkStep(null); setPendingDeviceId(null); }}
             >
               {/* — Entity discovery step (shown inline when picking a device) — */}
@@ -1554,18 +1567,32 @@ export const RoomBuilderPage: React.FC<RoomBuilderPageProps> = ({
                     profileId={pendingProfile.id}
                     deviceName={pendingDevice.name || pendingDevice.id}
                     onComplete={(mappings: EntityMappings) => {
-                      const nextRoom: RoomConfig = {
-                        ...selectedRoom,
+                      // Compute a default placement at the room centroid
+                      const defaultPlacement = selectedRoom.devicePlacement ?? (() => {
+                        const c = selectedRoom.roomShell?.points?.length
+                          ? computeCentroid(selectedRoom.roomShell.points)
+                          : { x: 0, y: 0 };
+                        return { x: c.x, y: c.y, rotationDeg: 0 };
+                      })();
+                      // Build the new sensor attachment
+                      const newSensor: SensorAttachment = {
                         deviceId: pendingDevice.id,
                         profileId: pendingProfile.id,
+                        placement: defaultPlacement,
+                      };
+                      const nextSensors = [...(selectedRoom.sensors ?? []), newSensor];
+                      // Build the updated room — sensors[] is authoritative, singular fields sync from sensors[0]
+                      const first = nextSensors[0];
+                      const nextRoom: RoomConfig = {
+                        ...selectedRoom,
+                        sensors: nextSensors,
+                        // Backward compat: singular fields from first sensor
+                        deviceId: first.deviceId,
+                        profileId: first.profileId,
+                        devicePlacement: first.placement,
+                        // Room-level concepts: entity mappings & name prefix
                         entityMappings: mappings,
                         entityNamePrefix: pendingDevice.entityNamePrefix,
-                        devicePlacement: selectedRoom.devicePlacement ?? (() => {
-                          const c = selectedRoom.roomShell?.points?.length
-                            ? computeCentroid(selectedRoom.roomShell.points)
-                            : { x: 0, y: 0 };
-                          return { x: c.x, y: c.y, rotationDeg: 0 };
-                        })(),
                       };
                       setRooms((prev) => prev.map((r) => (r.id === selectedRoom.id ? nextRoom : r)));
                       setSelectedProfileId(pendingProfile.id);
@@ -1618,27 +1645,67 @@ export const RoomBuilderPage: React.FC<RoomBuilderPageProps> = ({
                 </div>
 
               ) : (
-                /* — Default: + Add Device button + device list — */
+                /* — Default: + Add Device button + sensor card list — */
                 <div className="flex flex-col gap-2 text-sm">
                   <button
                     className={`rounded-xl border px-4 py-2.5 font-semibold shadow-lg transition-all active:scale-95 ${
-                      hasDevice
+                      !selectedRoom || availableDevices.length === 0
                         ? 'border-slate-700/30 bg-slate-800/30 text-slate-500 cursor-not-allowed'
                         : 'border-slate-700/50 bg-slate-800/50 text-slate-200 hover:border-slate-600'
                     }`}
-                    onClick={() => { if (!hasDevice) setDeviceLinkStep('pick'); }}
-                    disabled={hasDevice || !selectedRoom}
+                    onClick={() => { if (selectedRoom && availableDevices.length > 0) setDeviceLinkStep('pick'); }}
+                    disabled={!selectedRoom || availableDevices.length === 0}
                   >
                     + Add Device
                   </button>
-                  {hasDevice && selectedDevice && (
+                  {/* Render a card for each sensor in sensors[] */}
+                  {(selectedRoom?.sensors ?? []).map((sensor, index) => {
+                    const dev = devices.find((d) => d.id === sensor.deviceId);
+                    const prof = profiles.find((p) => p.id === sensor.profileId);
+                    const color = SENSOR_COLORS[index % SENSOR_COLORS.length];
+                    return (
+                      <div
+                        key={sensor.deviceId}
+                        onClick={() => {
+                          // T02 will wire full DeviceEditor context per sensor
+                          console.log('[Devices] sensor card clicked:', sensor.deviceId);
+                        }}
+                        className="group relative rounded-lg border p-2 cursor-pointer transition-all border-slate-700 bg-slate-800/30 hover:border-slate-600"
+                      >
+                        {/* Remove button — visible on hover, top-right (wired in T02) */}
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            console.log('[Devices] remove sensor:', sensor.deviceId);
+                          }}
+                          className="absolute top-1 right-1 z-10 opacity-0 group-hover:opacity-100 text-slate-600 hover:text-red-400 transition-all text-sm"
+                          title="Remove device"
+                        >
+                          🗑
+                        </button>
+                        <div className="flex items-center gap-2">
+                          <span
+                            className="inline-block w-3 h-3 rounded-full flex-shrink-0"
+                            style={{ backgroundColor: color }}
+                          />
+                          <div>
+                            <div className="text-xs text-slate-200 font-medium">{dev?.name || sensor.deviceId}</div>
+                            {prof && (
+                              <div className="text-[10px] text-slate-400">{prof.label ?? prof.id}</div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {/* Legacy fallback: room has deviceId but no sensors[] */}
+                  {(!selectedRoom?.sensors || selectedRoom.sensors.length === 0) && selectedRoom?.deviceId && selectedDevice && (
                     <div
                       onClick={() => {
                         setShowDeviceEditor(true);
                       }}
                       className="group relative rounded-lg border p-2 cursor-pointer transition-all border-slate-700 bg-slate-800/30 hover:border-slate-600"
                     >
-                      {/* Remove button — visible on hover, top-right */}
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
@@ -2263,7 +2330,7 @@ export const RoomBuilderPage: React.FC<RoomBuilderPageProps> = ({
           )}
 
           {/* Device Editor Panel */}
-          {showDeviceEditor && hasDevice && selectedRoom && (
+          {showDeviceEditor && sensorCount > 0 && selectedRoom && (
             <DeviceEditor
               deviceName={selectedDevice?.name || selectedDevice?.id || 'Device'}
               placement={selectedRoom.devicePlacement ?? { x: 0, y: 0, rotationDeg: 0 }}
