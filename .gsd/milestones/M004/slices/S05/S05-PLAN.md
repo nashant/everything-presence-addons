@@ -29,7 +29,7 @@ Write tests in `frontend/src/utils/__tests__/zoneCoverageUtils.test.ts` covering
   - Estimate: 45m
   - Files: everything-presence-mmwave-configurator/frontend/src/utils/zoneCoverageUtils.ts, everything-presence-mmwave-configurator/frontend/src/utils/__tests__/zoneCoverageUtils.test.ts, everything-presence-mmwave-configurator/frontend/src/api/types.ts
   - Verify: cd everything-presence-mmwave-configurator/frontend && npx vitest run src/utils/__tests__/zoneCoverageUtils.test.ts && npx tsc --noEmit
-- [ ] **T02: Aggregation mode selector + overlap threshold control in ZoneEditorPanel** — Add aggregation mode and overlap threshold configuration UI to the zone editor panel. This delivers R007 frontend support (aggregation strategy per zone) and R002 frontend support (configurable threshold per zone).
+- [x] **T02: Added aggregation mode toggle, overlap threshold slider, and per-sensor coverage breakdown to ZoneEditorPanel with utility-based coverage wiring from RoomBuilderPage** — Add aggregation mode and overlap threshold configuration UI to the zone editor panel. This delivers R007 frontend support (aggregation strategy per zone) and R002 frontend support (configurable threshold per zone).
 
 In `ZoneEditorPanel.tsx`:
 1. Add a 3-button toggle for aggregation mode below the Zone Type section, following the same pattern as the zone type buttons. Labels: 'Any (OR)', 'Majority', 'Hold on Tie'. Values: 'or', 'majority', 'no_change_on_tie'. Default visual state: 'or' when `zone.aggregationMode` is undefined.

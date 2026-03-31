@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "exported_at": "2026-03-31T16:18:48.855Z",
+  "exported_at": "2026-03-31T16:22:45.042Z",
   "milestones": [
     {
       "id": "M001",
@@ -2242,19 +2242,25 @@
       "milestone_id": "M004",
       "slice_id": "S05",
       "id": "T02",
-      "title": "Aggregation mode selector + overlap threshold control in ZoneEditorPanel",
-      "status": "pending",
-      "one_liner": "",
-      "narrative": "",
-      "verification_result": "",
+      "title": "Added aggregation mode toggle, overlap threshold slider, and per-sensor coverage breakdown to ZoneEditorPanel with utility-based coverage wiring from RoomBuilderPage",
+      "status": "complete",
+      "one_liner": "Added aggregation mode toggle, overlap threshold slider, and per-sensor coverage breakdown to ZoneEditorPanel with utility-based coverage wiring from RoomBuilderPage",
+      "narrative": "Extended ZoneEditorPanel with three new UI sections: aggregation mode 3-button toggle (Any OR / Majority / Hold on Tie), overlap threshold range slider (0-100% mapping to 0.0-1.0), and per-sensor coverage list with color dots and Full/Partial/None badges. In RoomBuilderPage, replaced the inline 25-line coverage computation with utility-backed approach using getPerSensorCoverage and getAggregateCoverage from zoneCoverageUtils, with legacy single-device fallback for backward compatibility.",
+      "verification_result": "npx tsc --noEmit — no new errors in task-relevant files (ZoneEditorPanel, RoomBuilderPage, zoneCoverageUtils). npx vitest run — 76/76 tests pass across 4 suites.",
       "duration": "",
-      "completed_at": null,
+      "completed_at": "2026-03-31T16:22:45.028Z",
       "blocker_discovered": false,
-      "deviations": "",
-      "known_issues": "",
-      "key_files": [],
-      "key_decisions": [],
-      "full_summary_md": "",
+      "deviations": "None.",
+      "known_issues": "None.",
+      "key_files": [
+        "everything-presence-mmwave-configurator/frontend/src/components/ZoneEditorPanel.tsx",
+        "everything-presence-mmwave-configurator/frontend/src/pages/RoomBuilderPage.tsx"
+      ],
+      "key_decisions": [
+        "Exported PerSensorCoverageInfo interface from ZoneEditorPanel for reuse by parent page",
+        "Built coverageSensors memo with legacy single-device fallback for backward compatibility"
+      ],
+      "full_summary_md": "---\nid: T02\nparent: S05\nmilestone: M004\nkey_files:\n  - everything-presence-mmwave-configurator/frontend/src/components/ZoneEditorPanel.tsx\n  - everything-presence-mmwave-configurator/frontend/src/pages/RoomBuilderPage.tsx\nkey_decisions:\n  - Exported PerSensorCoverageInfo interface from ZoneEditorPanel for reuse by parent page\n  - Built coverageSensors memo with legacy single-device fallback for backward compatibility\nduration: \"\"\nverification_result: passed\ncompleted_at: 2026-03-31T16:22:45.028Z\nblocker_discovered: false\n---\n\n# T02: Added aggregation mode toggle, overlap threshold slider, and per-sensor coverage breakdown to ZoneEditorPanel with utility-based coverage wiring from RoomBuilderPage\n\n**Added aggregation mode toggle, overlap threshold slider, and per-sensor coverage breakdown to ZoneEditorPanel with utility-based coverage wiring from RoomBuilderPage**\n\n## What Happened\n\nExtended ZoneEditorPanel with three new UI sections: aggregation mode 3-button toggle (Any OR / Majority / Hold on Tie), overlap threshold range slider (0-100% mapping to 0.0-1.0), and per-sensor coverage list with color dots and Full/Partial/None badges. In RoomBuilderPage, replaced the inline 25-line coverage computation with utility-backed approach using getPerSensorCoverage and getAggregateCoverage from zoneCoverageUtils, with legacy single-device fallback for backward compatibility.\n\n## Verification\n\nnpx tsc --noEmit — no new errors in task-relevant files (ZoneEditorPanel, RoomBuilderPage, zoneCoverageUtils). npx vitest run — 76/76 tests pass across 4 suites.\n\n## Verification Evidence\n\n| # | Command | Exit Code | Verdict | Duration |\n|---|---------|-----------|---------|----------|\n| 1 | `cd frontend && npx tsc --noEmit | grep -E '(ZoneEditorPanel|RoomBuilderPage|zoneCoverageUtils)'` | 0 | ✅ pass | 3700ms |\n| 2 | `cd frontend && npx vitest run` | 0 | ✅ pass | 3400ms |\n\n\n## Deviations\n\nNone.\n\n## Known Issues\n\nNone.\n\n## Files Created/Modified\n\n- `everything-presence-mmwave-configurator/frontend/src/components/ZoneEditorPanel.tsx`\n- `everything-presence-mmwave-configurator/frontend/src/pages/RoomBuilderPage.tsx`\n",
       "description": "Add aggregation mode and overlap threshold configuration UI to the zone editor panel. This delivers R007 frontend support (aggregation strategy per zone) and R002 frontend support (configurable threshold per zone).\n\nIn `ZoneEditorPanel.tsx`:\n1. Add a 3-button toggle for aggregation mode below the Zone Type section, following the same pattern as the zone type buttons. Labels: 'Any (OR)', 'Majority', 'Hold on Tie'. Values: 'or', 'majority', 'no_change_on_tie'. Default visual state: 'or' when `zone.aggregationMode` is undefined.\n2. Add an overlap threshold slider below aggregation mode. Range 0-100 (displayed as percentage). Maps to 0.0-1.0 on the zone's `overlapThreshold` field. Default visual state: 10% when undefined. Use a native `<input type=\"range\">` styled with Tailwind.\n3. Add a 'Per-Sensor Coverage' section that displays per-sensor coverage breakdown when the `perSensorCoverage` prop is provided. Each sensor shown as a row with its color dot + name + coverage badge (Full/Partial/None with green/amber/red coloring).\n\nUpdate `ZoneEditorPanelProps` to accept:\n- `perSensorCoverage?: Array<{ id: string; color: string; label: string; coverage: 'full' | 'partial' | 'none' }>` \n\nThe existing `coverage` prop stays for the aggregate warning banner. The new `perSensorCoverage` prop adds the per-sensor breakdown detail.\n\nIn `RoomBuilderPage.tsx`:\n1. Import `getPerSensorCoverage` and `getAggregateCoverage` from the new utility\n2. Replace the inline `selectedZoneCoverage` useMemo (lines 512-540) with one that uses the utility functions\n3. Compute `selectedZonePerSensorCoverage` from `getPerSensorCoverage` using `sensorPlacements`\n4. Pass per-sensor coverage data to `ZoneEditorPanel`\n\nUse the `frontend-design` skill for the UI component styling.\n\nColors for coverage badges: green=#22c55e (full), amber=#f59e0b (partial), red=#ef4444 (none) — matching existing ZoneItemRenderer convention. Sensor color dots use the sensor's color from SENSOR_COLORS.",
       "estimate": "45m",
       "files": [
@@ -3216,6 +3222,28 @@
       "verdict": "✅ pass",
       "duration_ms": 5500,
       "created_at": "2026-03-31T16:18:48.842Z"
+    },
+    {
+      "id": 65,
+      "task_id": "T02",
+      "slice_id": "S05",
+      "milestone_id": "M004",
+      "command": "cd frontend && npx tsc --noEmit | grep -E '(ZoneEditorPanel|RoomBuilderPage|zoneCoverageUtils)'",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 3700,
+      "created_at": "2026-03-31T16:22:45.028Z"
+    },
+    {
+      "id": 66,
+      "task_id": "T02",
+      "slice_id": "S05",
+      "milestone_id": "M004",
+      "command": "cd frontend && npx vitest run",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 3400,
+      "created_at": "2026-03-31T16:22:45.028Z"
     }
   ]
 }

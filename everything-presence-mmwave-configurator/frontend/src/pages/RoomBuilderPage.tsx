@@ -9,11 +9,12 @@ import { useWallDrawing } from '../hooks/useWallDrawing';
 import { FurnitureLibrary } from '../components/FurnitureLibrary';
 import { FurnitureEditor } from '../components/FurnitureEditor';
 import { DoorEditor } from '../components/DoorEditor';
-import { ZoneEditorPanel } from '../components/ZoneEditorPanel';
+import { ZoneEditorPanel, type PerSensorCoverageInfo } from '../components/ZoneEditorPanel';
 import { DeviceEditor } from '../components/DeviceEditor';
 import { FLOOR_MATERIALS } from '../components/FloorMaterials';
 import { useDisplaySettings } from '../hooks/useDisplaySettings';
 import { getInstallationAngleSuggestion } from '../utils/rotationSuggestion';
+import { getPerSensorCoverage, getAggregateCoverage, type CoverageSensorInfo } from '../utils/zoneCoverageUtils';
 import { useDeviceMappings } from '../contexts/DeviceMappingsContext';
 import { EditorSidebar, type EditorSection, type SectionDef } from '../components/EditorSidebar';
 import { PopOutPanel } from '../components/PopOutPanel';
@@ -508,40 +509,56 @@ export const RoomBuilderPage: React.FC<RoomBuilderPageProps> = ({
     [selectedZoneId, selectedRoom?.zones],
   );
 
-  // Compute zone coverage for the selected zone relative to the sensor's detection cone
-  const selectedZoneCoverage = useMemo((): 'full' | 'partial' | 'none' => {
-    if (!selectedZone || !selectedRoom?.devicePlacement) return 'full';
-    const dp = selectedRoom.devicePlacement;
-    const maxRange = (selectedProfile?.limits?.maxRangeMeters ?? 6) * 1000; // mm
-    const fovDeg = selectedProfile?.limits?.fieldOfViewDegrees ?? 120;
-    const rotRad = (((dp.rotationDeg ?? 0) + 90) * Math.PI) / 180;
-    const halfFov = (fovDeg * Math.PI) / 360;
-
-    const isInRange = (pt: { x: number; y: number }) => {
-      const dx = pt.x - dp.x, dy = pt.y - dp.y;
-      if (Math.sqrt(dx * dx + dy * dy) > maxRange) return false;
-      let diff = Math.atan2(dy, dx) - rotRad;
-      while (diff > Math.PI) diff -= 2 * Math.PI;
-      while (diff < -Math.PI) diff += 2 * Math.PI;
-      return Math.abs(diff) <= halfFov;
-    };
-
-    let verts: { x: number; y: number }[];
-    if (isZonePolygon(selectedZone)) {
-      verts = selectedZone.vertices;
-    } else {
-      const r = selectedZone as ZoneRect;
-      const hw = r.width / 2, hh = r.height / 2;
-      verts = [
-        { x: r.x - hw, y: r.y - hh }, { x: r.x + hw, y: r.y - hh },
-        { x: r.x + hw, y: r.y + hh }, { x: r.x - hw, y: r.y + hh },
-      ];
+  // Build sensor info list for coverage utilities (multi-sensor aware)
+  const coverageSensors: CoverageSensorInfo[] = useMemo(() => {
+    if (sensorPlacements && sensorPlacements.length > 0) {
+      return sensorPlacements.map((sp) => ({
+        id: sp.id,
+        placement: sp.placement,
+        fovDeg: sp.fovDeg,
+        maxRangeMeters: sp.maxRangeMeters,
+      }));
     }
-    const count = verts.filter(isInRange).length;
-    if (count === verts.length) return 'full';
-    if (count === 0) return 'none';
-    return 'partial';
-  }, [selectedZone, selectedRoom?.devicePlacement, selectedProfile?.limits]);
+    // Fallback: legacy single-device placement
+    if (selectedRoom?.devicePlacement) {
+      return [{
+        id: selectedRoom.deviceId ?? 'legacy',
+        placement: selectedRoom.devicePlacement,
+        fovDeg: selectedProfile?.limits?.fieldOfViewDegrees ?? 120,
+        maxRangeMeters: selectedProfile?.limits?.maxRangeMeters ?? 6,
+      }];
+    }
+    return [];
+  }, [sensorPlacements, selectedRoom?.devicePlacement, selectedRoom?.deviceId, selectedProfile?.limits]);
+
+  // Per-sensor coverage map for the selected zone
+  const selectedZonePerSensorMap = useMemo(() => {
+    if (!selectedZone || coverageSensors.length === 0) return new Map();
+    return getPerSensorCoverage(selectedZone, coverageSensors);
+  }, [selectedZone, coverageSensors]);
+
+  // Aggregate coverage from per-sensor results
+  const selectedZoneCoverage = useMemo((): 'full' | 'partial' | 'none' => {
+    if (!selectedZone) return 'full';
+    if (coverageSensors.length === 0) return 'full';
+    return getAggregateCoverage(selectedZonePerSensorMap);
+  }, [selectedZone, coverageSensors, selectedZonePerSensorMap]);
+
+  // Per-sensor coverage info for ZoneEditorPanel display
+  const selectedZonePerSensorCoverage: PerSensorCoverageInfo[] = useMemo(() => {
+    if (!selectedZone || coverageSensors.length === 0) return [];
+    const sensors = selectedRoom?.sensors ?? [];
+    return coverageSensors.map((cs, index) => {
+      const sensorAttachment = sensors.find((s) => s.deviceId === cs.id);
+      const device = devices.find((d) => d.id === cs.id);
+      return {
+        id: cs.id,
+        color: sensorPlacements?.[index]?.color ?? SENSOR_COLORS[index % SENSOR_COLORS.length],
+        label: device?.name ?? sensorAttachment?.deviceId ?? cs.id,
+        coverage: selectedZonePerSensorMap.get(cs.id) ?? 'none',
+      };
+    });
+  }, [selectedZone, coverageSensors, selectedZonePerSensorMap, selectedRoom?.sensors, devices, sensorPlacements]);
 
   // Helper to generate UUID
   const generateId = () => {
@@ -2364,6 +2381,7 @@ export const RoomBuilderPage: React.FC<RoomBuilderPageProps> = ({
               onClose={() => setSelectedItem(null)}
               onDeleteVertex={handleDeleteZoneVertex}
               coverage={selectedZoneCoverage}
+              perSensorCoverage={selectedZonePerSensorCoverage}
             />
           )}
 

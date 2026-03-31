@@ -1,6 +1,13 @@
 import React from 'react';
 import { Zone, ZoneRect, ZonePolygon, isZoneRect, isZonePolygon } from '../api/types';
 
+export interface PerSensorCoverageInfo {
+  id: string;
+  color: string;
+  label: string;
+  coverage: 'full' | 'partial' | 'none';
+}
+
 interface ZoneEditorPanelProps {
   zone: Zone;
   onChange: (zone: Zone) => void;
@@ -8,6 +15,7 @@ interface ZoneEditorPanelProps {
   onClose: () => void;
   onDeleteVertex?: (index: number) => void;
   coverage?: 'full' | 'partial' | 'none';
+  perSensorCoverage?: PerSensorCoverageInfo[];
 }
 
 const zoneTypeLabels: Record<Zone['type'], string> = {
@@ -22,6 +30,20 @@ const zoneTypeColors: Record<Zone['type'], string> = {
   entry: 'bg-yellow-500/20 text-yellow-300 border-yellow-500/50',
 };
 
+type AggregationMode = 'or' | 'majority' | 'no_change_on_tie';
+
+const aggregationModes: { value: AggregationMode; label: string }[] = [
+  { value: 'or', label: 'Any (OR)' },
+  { value: 'majority', label: 'Majority' },
+  { value: 'no_change_on_tie', label: 'Hold on Tie' },
+];
+
+const coverageBadgeStyles: Record<'full' | 'partial' | 'none', string> = {
+  full: 'bg-green-500/20 text-green-300 border-green-500/40',
+  partial: 'bg-amber-500/20 text-amber-300 border-amber-500/40',
+  none: 'bg-red-500/20 text-red-300 border-red-500/40',
+};
+
 export const ZoneEditorPanel: React.FC<ZoneEditorPanelProps> = ({
   zone,
   onChange,
@@ -29,8 +51,11 @@ export const ZoneEditorPanel: React.FC<ZoneEditorPanelProps> = ({
   onClose,
   onDeleteVertex,
   coverage = 'full',
+  perSensorCoverage,
 }) => {
   const update = (patch: Partial<Zone>) => onChange({ ...zone, ...patch } as Zone);
+  const activeAggregation: AggregationMode = zone.aggregationMode ?? 'or';
+  const overlapPct = Math.round((zone.overlapThreshold ?? 0.1) * 100);
 
   return (
     <div data-panel className="fixed top-14 bottom-0 right-0 z-[55] w-80 bg-slate-900/95 backdrop-blur border-l border-slate-700 shadow-2xl flex flex-col">
@@ -101,6 +126,81 @@ export const ZoneEditorPanel: React.FC<ZoneEditorPanelProps> = ({
             onChange={(e) => update({ label: e.target.value || undefined })}
           />
         </div>
+
+        {/* Aggregation Mode */}
+        <div>
+          <div className="text-xs font-medium text-slate-400 mb-2">Aggregation Mode</div>
+          <div className="flex gap-1.5">
+            {aggregationModes.map(({ value, label }) => (
+              <button
+                key={value}
+                onClick={() => update({ aggregationMode: value })}
+                className={`flex-1 rounded-lg border px-2 py-2 text-[11px] font-semibold transition-all ${
+                  activeAggregation === value
+                    ? 'border-aqua-500/60 bg-aqua-500/15 text-aqua-300'
+                    : 'border-slate-700 bg-slate-800/30 text-slate-400 hover:border-slate-600'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <p className="text-[10px] text-slate-500 mt-1.5">
+            {activeAggregation === 'or' && 'Zone is occupied if any sensor detects presence.'}
+            {activeAggregation === 'majority' && 'Zone is occupied if >50% of sensors detect presence.'}
+            {activeAggregation === 'no_change_on_tie' && 'On tie, zone keeps its current state.'}
+          </p>
+        </div>
+
+        {/* Overlap Threshold */}
+        <div>
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-medium text-slate-400">Overlap Threshold</span>
+            <span className="text-xs font-mono text-aqua-300 tabular-nums">{overlapPct}%</span>
+          </div>
+          <input
+            type="range"
+            min={0}
+            max={100}
+            value={overlapPct}
+            onChange={(e) => update({ overlapThreshold: Number(e.target.value) / 100 })}
+            className="w-full h-1.5 rounded-full appearance-none cursor-pointer bg-slate-700 accent-aqua-500
+              [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3.5 [&::-webkit-slider-thumb]:h-3.5
+              [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-aqua-400 [&::-webkit-slider-thumb]:shadow-md
+              [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-slate-900
+              [&::-moz-range-thumb]:w-3.5 [&::-moz-range-thumb]:h-3.5 [&::-moz-range-thumb]:rounded-full
+              [&::-moz-range-thumb]:bg-aqua-400 [&::-moz-range-thumb]:border-2 [&::-moz-range-thumb]:border-slate-900"
+          />
+          <p className="text-[10px] text-slate-500 mt-1">
+            Minimum vertex coverage to consider a sensor as covering this zone.
+          </p>
+        </div>
+
+        {/* Per-Sensor Coverage */}
+        {perSensorCoverage && perSensorCoverage.length > 0 && (
+          <div>
+            <div className="text-xs font-medium text-slate-400 mb-2">Per-Sensor Coverage</div>
+            <div className="space-y-1.5">
+              {perSensorCoverage.map((sensor) => (
+                <div
+                  key={sensor.id}
+                  className="flex items-center gap-2.5 rounded-lg border border-slate-700/50 bg-slate-800/40 px-3 py-2"
+                >
+                  <span
+                    className="w-2.5 h-2.5 rounded-full shrink-0 ring-1 ring-white/10"
+                    style={{ backgroundColor: sensor.color }}
+                  />
+                  <span className="text-xs text-slate-300 truncate flex-1">{sensor.label}</span>
+                  <span
+                    className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${coverageBadgeStyles[sensor.coverage]}`}
+                  >
+                    {sensor.coverage === 'full' ? 'Full' : sensor.coverage === 'partial' ? 'Partial' : 'None'}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Rectangle-specific: Position & Size */}
         {isZoneRect(zone) && (() => {
