@@ -22,6 +22,48 @@ const toCanvasLength = (v: number, rangeMm: number, canvasSize: number) =>
 
 type ZoneCoverage = 'full' | 'partial' | 'none';
 
+/** Per-sensor coverage entry for a single zone */
+export type PerSensorCoverageEntry = {
+  sensorId: string;
+  color: string;
+  coverage: 'full' | 'partial' | 'none';
+};
+
+/** Compute canvas-space center and top-right corner for a zone */
+function getZoneCanvasBounds(
+  zone: Zone,
+  ctx: CanvasContext,
+  canvasSize: number,
+  rangeMm: number,
+): { cx: number; cy: number; topRightX: number; topRightY: number } {
+  if (isZonePolygon(zone)) {
+    const canvasVerts = zone.vertices.map((v) => ctx.toCanvasCoord(v));
+    const xs = canvasVerts.map((v) => v.x);
+    const ys = canvasVerts.map((v) => v.y);
+    const minX = Math.min(...xs);
+    const maxX = Math.max(...xs);
+    const minY = Math.min(...ys);
+    const maxY = Math.max(...ys);
+    return {
+      cx: (minX + maxX) / 2,
+      cy: (minY + maxY) / 2,
+      topRightX: maxX,
+      topRightY: minY,
+    };
+  }
+  // Rect zone
+  const r = zone as ZoneRect;
+  const cPos = ctx.toCanvasCoord({ x: r.x, y: r.y });
+  const cw = toCanvasLength(r.width, rangeMm, canvasSize);
+  const ch = toCanvasLength(r.height, rangeMm, canvasSize);
+  return {
+    cx: cPos.x,
+    cy: cPos.y,
+    topRightX: cPos.x + cw / 2,
+    topRightY: cPos.y - ch / 2,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Rendering
 // ---------------------------------------------------------------------------
@@ -38,6 +80,7 @@ function renderZones(
   toWorldFromEvent: (e: React.MouseEvent) => Point | null,
   getZoneCoverage: (zone: Zone) => ZoneCoverage,
   onZoneChange?: (zone: Zone) => void,
+  perSensorCoverageMap?: Map<string, PerSensorCoverageEntry[]>,
 ): React.ReactNode {
   return zones.map((zone) => {
     const coverage = getZoneCoverage(zone);
@@ -56,16 +99,64 @@ function renderZones(
     const isSelected = selectedId === zone.id;
     const isDisabled = zone.enabled === false;
 
+    // Compute zone bounding box center + top-right for indicator placement
+    const sensorEntries = perSensorCoverageMap?.get(zone.id);
+
+    let zoneElement: React.ReactNode;
     if (isZonePolygon(zone)) {
-      return renderPolygonZone(
+      zoneElement = renderPolygonZone(
         zone, isSelected, isDisabled, zoneColor, coverage, ctx, handlers,
         canChange, toWorldFromEvent, onZoneChange,
       );
+    } else {
+      zoneElement = renderRectZone(
+        zone as ZoneRect, isSelected, isDisabled, zoneColor, coverage, ctx, handlers,
+        canvasSize, rangeMm, canChange, toWorldFromEvent,
+      );
     }
 
-    return renderRectZone(
-      zone as ZoneRect, isSelected, isDisabled, zoneColor, coverage, ctx, handlers,
-      canvasSize, rangeMm, canChange, toWorldFromEvent,
+    // If no per-sensor data, render just the zone
+    if (!sensorEntries || sensorEntries.length === 0) return zoneElement;
+
+    // Compute zone bounding box in canvas coords for dot placement
+    const { cx: zoneCx, cy: zoneCy, topRightX, topRightY } = getZoneCanvasBounds(zone, ctx, canvasSize, rangeMm);
+    const coveringSensors = sensorEntries.filter((e) => e.coverage !== 'none');
+    const hasAnyCoverage = coveringSensors.length > 0;
+
+    return (
+      <React.Fragment key={`${zone.id}-with-indicators`}>
+        {zoneElement}
+        {/* Per-sensor coverage indicator dots at top-right of zone */}
+        {hasAnyCoverage && coveringSensors.map((entry, i) => (
+          <circle
+            key={`${zone.id}-dot-${entry.sensorId}`}
+            cx={topRightX - 4 - i * 10}
+            cy={topRightY + 4}
+            r={4}
+            fill={entry.color}
+            stroke="#ffffff"
+            strokeWidth={1.5}
+            opacity={isDisabled ? 0.35 : 0.9}
+            style={{ pointerEvents: 'none' }}
+          />
+        ))}
+        {/* Uncovered zone warning icon in center */}
+        {!hasAnyCoverage && (
+          <text
+            x={zoneCx}
+            y={zoneCy}
+            textAnchor="middle"
+            dominantBaseline="middle"
+            fill="#ef4444"
+            fontSize={14}
+            fontWeight={700}
+            opacity={isDisabled ? 0.35 : 0.9}
+            style={{ pointerEvents: 'none', userSelect: 'none' }}
+          >
+            ⚠
+          </text>
+        )}
+      </React.Fragment>
     );
   });
 }

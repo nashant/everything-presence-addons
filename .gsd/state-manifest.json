@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "exported_at": "2026-03-31T16:22:45.042Z",
+  "exported_at": "2026-03-31T16:28:54.813Z",
   "milestones": [
     {
       "id": "M001",
@@ -2286,19 +2286,26 @@
       "milestone_id": "M004",
       "slice_id": "S05",
       "id": "T03",
-      "title": "Zone list coverage badges, uncovered warnings, and canvas per-sensor indicators",
-      "status": "pending",
-      "one_liner": "",
-      "narrative": "",
-      "verification_result": "",
+      "title": "Added coverage badges to zone list panel, uncovered-zone warning banner, and per-sensor indicator dots on canvas zones",
+      "status": "complete",
+      "one_liner": "Added coverage badges to zone list panel, uncovered-zone warning banner, and per-sensor indicator dots on canvas zones",
+      "narrative": "Three areas of work: (1) RoomBuilderPage zone list panel — added zoneCoverageMap and allZonesPerSensorCoverageMap useMemo computations, zone list items now show colored coverage badges and an uncovered-zones warning banner. (2) ZoneItemRenderer — extended renderZones with optional perSensorCoverageMap parameter, added per-sensor colored dots at zone top-right corners and ⚠ icon for uncovered zones, plus getZoneCanvasBounds helper. (3) RoomCanvas — added perSensorCoverageMap prop and threaded it to zoneRenderer.render().",
+      "verification_result": "npx tsc --noEmit — no new errors in modified files. npx vitest run — 76/76 tests pass across 4 suites.",
       "duration": "",
-      "completed_at": null,
+      "completed_at": "2026-03-31T16:28:54.800Z",
       "blocker_discovered": false,
-      "deviations": "",
-      "known_issues": "",
-      "key_files": [],
-      "key_decisions": [],
-      "full_summary_md": "",
+      "deviations": "None.",
+      "known_issues": "None.",
+      "key_files": [
+        "everything-presence-mmwave-configurator/frontend/src/pages/RoomBuilderPage.tsx",
+        "everything-presence-mmwave-configurator/frontend/src/components/canvas/ZoneItemRenderer.tsx",
+        "everything-presence-mmwave-configurator/frontend/src/components/RoomCanvas.tsx"
+      ],
+      "key_decisions": [
+        "Rendered per-sensor dots as React.Fragment siblings to zone elements rather than threading data through polygon/rect renderers",
+        "Used getZoneCanvasBounds helper to compute dot placement for both rect and polygon zones consistently"
+      ],
+      "full_summary_md": "---\nid: T03\nparent: S05\nmilestone: M004\nkey_files:\n  - everything-presence-mmwave-configurator/frontend/src/pages/RoomBuilderPage.tsx\n  - everything-presence-mmwave-configurator/frontend/src/components/canvas/ZoneItemRenderer.tsx\n  - everything-presence-mmwave-configurator/frontend/src/components/RoomCanvas.tsx\nkey_decisions:\n  - Rendered per-sensor dots as React.Fragment siblings to zone elements rather than threading data through polygon/rect renderers\n  - Used getZoneCanvasBounds helper to compute dot placement for both rect and polygon zones consistently\nduration: \"\"\nverification_result: passed\ncompleted_at: 2026-03-31T16:28:54.800Z\nblocker_discovered: false\n---\n\n# T03: Added coverage badges to zone list panel, uncovered-zone warning banner, and per-sensor indicator dots on canvas zones\n\n**Added coverage badges to zone list panel, uncovered-zone warning banner, and per-sensor indicator dots on canvas zones**\n\n## What Happened\n\nThree areas of work: (1) RoomBuilderPage zone list panel — added zoneCoverageMap and allZonesPerSensorCoverageMap useMemo computations, zone list items now show colored coverage badges and an uncovered-zones warning banner. (2) ZoneItemRenderer — extended renderZones with optional perSensorCoverageMap parameter, added per-sensor colored dots at zone top-right corners and ⚠ icon for uncovered zones, plus getZoneCanvasBounds helper. (3) RoomCanvas — added perSensorCoverageMap prop and threaded it to zoneRenderer.render().\n\n## Verification\n\nnpx tsc --noEmit — no new errors in modified files. npx vitest run — 76/76 tests pass across 4 suites.\n\n## Verification Evidence\n\n| # | Command | Exit Code | Verdict | Duration |\n|---|---------|-----------|---------|----------|\n| 1 | `cd frontend && npx tsc --noEmit | grep -E '(ZoneItemRenderer|RoomCanvas|RoomBuilderPage|zoneCoverageUtils)'` | 0 | ✅ pass | 3700ms |\n| 2 | `cd frontend && npx vitest run` | 0 | ✅ pass | 874ms |\n\n\n## Deviations\n\nNone.\n\n## Known Issues\n\nNone.\n\n## Files Created/Modified\n\n- `everything-presence-mmwave-configurator/frontend/src/pages/RoomBuilderPage.tsx`\n- `everything-presence-mmwave-configurator/frontend/src/components/canvas/ZoneItemRenderer.tsx`\n- `everything-presence-mmwave-configurator/frontend/src/components/RoomCanvas.tsx`\n",
       "description": "Wire coverage visualization into the zones list panel and canvas zone rendering. This delivers R010 (coverage visualization) and R011 (uncovered zone warnings).\n\n**Zones list panel** (in `RoomBuilderPage.tsx`, the `activeSection === 'zones'` block starting at line 1794):\n1. For each zone in the list, compute aggregate coverage using `getPerSensorCoverage` + `getAggregateCoverage` from the utility\n2. Add a coverage badge next to each zone's type badge: green dot for full, amber dot for partial, red dot + '⚠' for none\n3. After the zone list, if any zones have 'none' coverage, show a warning banner: 'N zone(s) have no sensor coverage — reposition sensors or adjust zones'\n4. The coverage computation for the list needs the `sensorPlacements` array — compute a `zoneCoverageMap` useMemo that maps zone IDs to aggregate coverage for all zones\n\n**Canvas zone indicators** (in `ZoneItemRenderer.tsx`):\n1. Extend `renderZones` to accept an optional `perSensorCoverageMap?: Map<string, Array<{ sensorId: string; color: string; coverage: 'full' | 'partial' | 'none' }>>` parameter\n2. For each zone, if per-sensor data exists, render small colored dots (one per covering sensor) at the top-right corner of the zone. Dot color = sensor's SENSOR_COLORS entry. Dot has a subtle white border. Only show dots for sensors with 'full' or 'partial' coverage (skip 'none').\n3. If zone has zero covering sensors (all 'none'), render a small '⚠' icon in the zone center in red\n\n**RoomCanvas.tsx wiring:**\n1. Add a `perSensorCoverageMap` prop to RoomCanvas\n2. Pass it through to `zoneRenderer.renderZones()`\n3. In `RoomBuilderPage.tsx`, compute the map for all zones and pass it to RoomCanvas\n\nUse the `frontend-design` skill for the UI work.\n\nVerify all existing ZoneItemRenderer tests still pass — the new parameter is optional so existing call sites are unaffected.",
       "estimate": "50m",
       "files": [
@@ -3244,6 +3251,28 @@
       "verdict": "✅ pass",
       "duration_ms": 3400,
       "created_at": "2026-03-31T16:22:45.028Z"
+    },
+    {
+      "id": 67,
+      "task_id": "T03",
+      "slice_id": "S05",
+      "milestone_id": "M004",
+      "command": "cd frontend && npx tsc --noEmit | grep -E '(ZoneItemRenderer|RoomCanvas|RoomBuilderPage|zoneCoverageUtils)'",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 3700,
+      "created_at": "2026-03-31T16:28:54.800Z"
+    },
+    {
+      "id": 68,
+      "task_id": "T03",
+      "slice_id": "S05",
+      "milestone_id": "M004",
+      "command": "cd frontend && npx vitest run",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 874,
+      "created_at": "2026-03-31T16:28:54.800Z"
     }
   ]
 }

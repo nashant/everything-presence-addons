@@ -3,7 +3,7 @@ import { FurnitureInstance, Door, Zone, ZoneRect, isZonePolygon } from '../api/t
 import { FloorMaterialDefs, getFloorFill } from './FloorMaterials';
 import { useThemeContext } from '../contexts/ThemeContext';
 import { furnitureRenderer } from './canvas/FurnitureItemRenderer';
-import { zoneRenderer } from './canvas/ZoneItemRenderer';
+import { zoneRenderer, type PerSensorCoverageEntry } from './canvas/ZoneItemRenderer';
 import { renderDeviceNonInteractive, renderDeviceInteractive } from './canvas/DeviceItemRenderer';
 import { renderDoors } from './canvas/DoorItemRenderer';
 import type { ActiveDrag, CanvasContext, FurnitureDrag, ZoneDrag, SensorRenderInfo } from './canvas/types';
@@ -84,6 +84,7 @@ interface RoomCanvasProps {
   onZoneChange?: (zone: Zone) => void;
   onZoneVertexDrag?: (zoneId: string, vertexIndex: number, pos: { x: number; y: number }) => void;
   showZones?: boolean;
+  perSensorCoverageMap?: Map<string, PerSensorCoverageEntry[]>;
   roomShellFillMode?: 'overlay' | 'material';
   floorMaterial?: string;
   // Multi-sensor support
@@ -252,6 +253,7 @@ export const RoomCanvas: React.FC<RoomCanvasProps> = ({
   selectedZoneId,
   onZoneChange,
   showZones = true,
+  perSensorCoverageMap,
   roomShellFillMode = 'overlay',
   floorMaterial = 'none',
   sensorPlacements,
@@ -883,6 +885,7 @@ export const RoomCanvas: React.FC<RoomCanvasProps> = ({
           toWorldFromEvent,
           getZoneCoverage,
           onZoneChange,
+          perSensorCoverageMap,
         )}
 
         {/* Build device element for non-interactive mode (Zone Editor) - passed to renderOverlay for z-order control */}

@@ -560,6 +560,35 @@ export const RoomBuilderPage: React.FC<RoomBuilderPageProps> = ({
     });
   }, [selectedZone, coverageSensors, selectedZonePerSensorMap, selectedRoom?.sensors, devices, sensorPlacements]);
 
+  // Aggregate coverage for ALL zones (used in zones list badges + uncovered warnings)
+  const zoneCoverageMap = useMemo((): Map<string, 'full' | 'partial' | 'none'> => {
+    const zones = selectedRoom?.zones ?? [];
+    if (zones.length === 0 || coverageSensors.length === 0) return new Map();
+    const map = new Map<string, 'full' | 'partial' | 'none'>();
+    for (const zone of zones) {
+      const perSensor = getPerSensorCoverage(zone, coverageSensors);
+      map.set(zone.id, getAggregateCoverage(perSensor));
+    }
+    return map;
+  }, [selectedRoom?.zones, coverageSensors]);
+
+  // Per-sensor coverage for ALL zones (used for canvas indicator dots)
+  const allZonesPerSensorCoverageMap = useMemo((): Map<string, Array<{ sensorId: string; color: string; coverage: 'full' | 'partial' | 'none' }>> => {
+    const zones = selectedRoom?.zones ?? [];
+    if (zones.length === 0 || coverageSensors.length === 0) return new Map();
+    const map = new Map<string, Array<{ sensorId: string; color: string; coverage: 'full' | 'partial' | 'none' }>>();
+    for (const zone of zones) {
+      const perSensor = getPerSensorCoverage(zone, coverageSensors);
+      const entries = coverageSensors.map((cs, index) => ({
+        sensorId: cs.id,
+        color: sensorPlacements?.[index]?.color ?? SENSOR_COLORS[index % SENSOR_COLORS.length],
+        coverage: perSensor.get(cs.id) ?? 'none' as const,
+      }));
+      map.set(zone.id, entries);
+    }
+    return map;
+  }, [selectedRoom?.zones, coverageSensors, sensorPlacements]);
+
   // Helper to generate UUID
   const generateId = () => {
     if (typeof crypto !== 'undefined' && crypto.randomUUID) {
@@ -1507,6 +1536,7 @@ export const RoomBuilderPage: React.FC<RoomBuilderPageProps> = ({
                   selectedZoneId={selectedZoneId}
                   onZoneChange={activeSection === 'zones' ? handleZoneChange : undefined}
                   showZones={showZones}
+                  perSensorCoverageMap={allZonesPerSensorCoverageMap}
                   roomShellFillMode={selectedRoom.roomShellFillMode}
                   floorMaterial={selectedRoom.floorMaterial}
                   showWalls={showWalls}
@@ -1853,37 +1883,71 @@ export const RoomBuilderPage: React.FC<RoomBuilderPageProps> = ({
                       Add detection zones to define monitoring areas.
                     </div>
                   )}
-                  {zones.map((zone) => (
-                    <div
-                      key={zone.id}
-                      onClick={() => setSelectedItem({ type: 'zone', id: zone.id })}
-                      className={`rounded-lg border p-2 cursor-pointer transition-all ${
-                        selectedZoneId === zone.id
-                          ? 'border-aqua-500 bg-aqua-600/20'
-                          : 'border-slate-700 bg-slate-800/30 hover:border-slate-600'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs text-slate-200">
-                          {zone.label || `Zone ${zone.id.slice(0, 6)}`}
-                        </span>
-                        <div className="flex items-center gap-1.5">
-                          <span className={`text-[10px] px-1.5 py-0.5 rounded ${
-                            zone.type === 'exclusion'
-                              ? 'bg-red-500/20 text-red-300'
-                              : zone.type === 'entry'
-                                ? 'bg-yellow-500/20 text-yellow-300'
-                                : 'bg-blue-500/20 text-blue-300'
-                          }`}>
-                            {zone.type}
+                  {zones.map((zone) => {
+                    const coverage = zoneCoverageMap.get(zone.id) ?? (coverageSensors.length === 0 ? 'full' : 'none');
+                    return (
+                      <div
+                        key={zone.id}
+                        onClick={() => setSelectedItem({ type: 'zone', id: zone.id })}
+                        className={`rounded-lg border p-2 cursor-pointer transition-all ${
+                          selectedZoneId === zone.id
+                            ? 'border-aqua-500 bg-aqua-600/20'
+                            : 'border-slate-700 bg-slate-800/30 hover:border-slate-600'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs text-slate-200">
+                            {zone.label || `Zone ${zone.id.slice(0, 6)}`}
                           </span>
-                          {zone.enabled === false && (
-                            <span className="text-[10px] text-slate-500">off</span>
-                          )}
+                          <div className="flex items-center gap-1.5">
+                            <span className={`text-[10px] px-1.5 py-0.5 rounded ${
+                              zone.type === 'exclusion'
+                                ? 'bg-red-500/20 text-red-300'
+                                : zone.type === 'entry'
+                                  ? 'bg-yellow-500/20 text-yellow-300'
+                                  : 'bg-blue-500/20 text-blue-300'
+                            }`}>
+                              {zone.type}
+                            </span>
+                            {/* Coverage badge */}
+                            <span className={`inline-flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded font-medium ${
+                              coverage === 'full'
+                                ? 'bg-emerald-500/15 text-emerald-400'
+                                : coverage === 'partial'
+                                  ? 'bg-amber-500/15 text-amber-400'
+                                  : 'bg-red-500/15 text-red-400'
+                            }`}>
+                              <span className={`inline-block w-1.5 h-1.5 rounded-full ${
+                                coverage === 'full'
+                                  ? 'bg-emerald-400'
+                                  : coverage === 'partial'
+                                    ? 'bg-amber-400'
+                                    : 'bg-red-400'
+                              }`} />
+                              {coverage === 'none' && '⚠'}
+                              {coverage === 'full' ? 'covered' : coverage}
+                            </span>
+                            {zone.enabled === false && (
+                              <span className="text-[10px] text-slate-500">off</span>
+                            )}
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
+                  {/* Uncovered zones warning banner */}
+                  {(() => {
+                    const uncoveredCount = zones.filter((z) => zoneCoverageMap.get(z.id) === 'none').length;
+                    if (uncoveredCount === 0 || coverageSensors.length === 0) return null;
+                    return (
+                      <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-[11px] text-red-300 flex items-start gap-2">
+                        <span className="text-red-400 mt-px">⚠</span>
+                        <span>
+                          {uncoveredCount} zone{uncoveredCount !== 1 ? 's have' : ' has'} no sensor coverage — reposition sensors or adjust zones
+                        </span>
+                      </div>
+                    );
+                  })()}
                 </div>
               </PopOutPanel>
             );

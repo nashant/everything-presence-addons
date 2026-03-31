@@ -53,7 +53,7 @@ Colors for coverage badges: green=#22c55e (full), amber=#f59e0b (partial), red=#
   - Estimate: 45m
   - Files: everything-presence-mmwave-configurator/frontend/src/components/ZoneEditorPanel.tsx, everything-presence-mmwave-configurator/frontend/src/pages/RoomBuilderPage.tsx
   - Verify: cd everything-presence-mmwave-configurator/frontend && npx tsc --noEmit && npx vitest run
-- [ ] **T03: Zone list coverage badges, uncovered warnings, and canvas per-sensor indicators** — Wire coverage visualization into the zones list panel and canvas zone rendering. This delivers R010 (coverage visualization) and R011 (uncovered zone warnings).
+- [x] **T03: Added coverage badges to zone list panel, uncovered-zone warning banner, and per-sensor indicator dots on canvas zones** — Wire coverage visualization into the zones list panel and canvas zone rendering. This delivers R010 (coverage visualization) and R011 (uncovered zone warnings).
 
 **Zones list panel** (in `RoomBuilderPage.tsx`, the `activeSection === 'zones'` block starting at line 1794):
 1. For each zone in the list, compute aggregate coverage using `getPerSensorCoverage` + `getAggregateCoverage` from the utility
