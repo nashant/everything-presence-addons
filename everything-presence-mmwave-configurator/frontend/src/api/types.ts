@@ -146,6 +146,12 @@ export interface DevicePlacement {
   rotationDeg?: number;
 }
 
+export interface SensorAttachment {
+  deviceId: string;
+  profileId?: string;
+  placement?: DevicePlacement;
+}
+
 export interface FurnitureType {
   id: string; // e.g., 'bed-double', 'sofa-2seat'
   label: string; // Display name
@@ -296,6 +302,7 @@ export interface RoomConfig {
   roomShellFillMode?: 'overlay' | 'material';
   floorMaterial?: 'wood-oak' | 'wood-walnut' | 'wood-cherry' | 'wood-ash' | 'wood-mahogany' | 'wood-herringbone' | 'carpet-beige' | 'carpet-gray' | 'carpet-charcoal' | 'carpet-navy' | 'carpet-burgundy' | 'tile-white' | 'tile-gray' | 'tile-terracotta' | 'marble-white' | 'marble-black' | 'slate' | 'concrete' | 'vinyl-light' | 'none';
   devicePlacement?: DevicePlacement;
+  sensors?: SensorAttachment[];
   furniture?: FurnitureInstance[];
   doors?: Door[];
   metadata?: Record<string, unknown>;

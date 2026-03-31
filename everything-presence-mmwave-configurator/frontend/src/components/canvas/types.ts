@@ -4,7 +4,7 @@
 
 import type React from 'react';
 import type { Point } from './geometry';
-import type { FurnitureInstance, Zone } from '../../api/types';
+import type { FurnitureInstance, Zone, DevicePlacement } from '../../api/types';
 import type { CanvasItemType } from '../RoomCanvas';
 
 // ---------------------------------------------------------------------------
@@ -90,7 +90,30 @@ export interface ZoneVertexState {
 
 export interface DeviceDragState {
   mode: 'device-drag';
+  sensorId?: string;
 }
+
+// ---------------------------------------------------------------------------
+// Multi-sensor rendering types
+// ---------------------------------------------------------------------------
+
+export interface SensorRenderInfo {
+  id: string;
+  placement: DevicePlacement;
+  fovDeg: number;
+  maxRangeMeters: number;
+  iconUrl?: string;
+  color: string;
+}
+
+/** Rotating palette for distinguishing sensors on the canvas */
+export const SENSOR_COLORS = [
+  '#22c55e', // green
+  '#f59e0b', // amber
+  '#8b5cf6', // violet
+  '#ec4899', // pink
+  '#06b6d4', // cyan
+] as const;
 
 export interface ZoneResizeState {
   mode: 'zone-resize';

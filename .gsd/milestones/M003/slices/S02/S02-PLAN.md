@@ -14,7 +14,7 @@ Steps:
 5. Verify `npx tsc --noEmit` baseline (note any pre-existing errors but confirm S01 backend sensors types exist)
   - Estimate: 10m
   - Verify: git log --oneline -5 shows feat/multi-device-rooms history (M001/M002/S01 commits present). `git show feat/multi-device-rooms--M003-S02:everything-presence-mmwave-configurator/frontend/src/components/canvas/types.ts` contains ActiveDrag union type.
-- [ ] **T02: Add SensorAttachment type, sensors[] on RoomConfig, SensorRenderInfo, and SENSOR_COLORS** — Add all new types needed for multi-sensor support to the correct room-first codebase. This includes the API type, canvas rendering type, color constants, and DeviceDragState extension.
+- [x] **T02: Added SensorAttachment, SensorRenderInfo, SENSOR_COLORS, and DeviceDragState.sensorId for multi-sensor canvas rendering** — Add all new types needed for multi-sensor support to the correct room-first codebase. This includes the API type, canvas rendering type, color constants, and DeviceDragState extension.
 
 Steps:
 1. In `frontend/src/api/types.ts`:
