@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "exported_at": "2026-03-31T09:29:05.164Z",
+  "exported_at": "2026-03-31T10:18:07.943Z",
   "milestones": [
     {
       "id": "M001",
@@ -1667,19 +1667,25 @@
       "milestone_id": "M004",
       "slice_id": "S01",
       "id": "T02",
-      "title": "Implement per-sensor zone coverage analyzer with grid-point sampling and unit tests",
-      "status": "pending",
-      "one_liner": "",
-      "narrative": "",
-      "verification_result": "",
+      "title": "Built zoneCoverage.ts with grid-point sampling FOV cone analysis — 31 tests pass covering all rotations, zone types, boundary conditions, and batch matrix computation",
+      "status": "complete",
+      "one_liner": "Built zoneCoverage.ts with grid-point sampling FOV cone analysis — 31 tests pass covering all rotations, zone types, boundary conditions, and batch matrix computation",
+      "narrative": "Created zoneCoverage.ts in backend/src/domain/ with five exported pure functions: isPointInPolygon (ray-casting), isPointInCone (FOV cone test with +90° offset, angle normalisation, zero-distance guard), getZoneSamplePoints (uniform grid for ZoneRect center-based and ZonePolygon bounding-box filtered), computeZoneCoverage (single-sensor fraction 0.0–1.0), and computeAllCoverage (batch zones×sensors matrix). Wrote 31 tests across 5 describe blocks covering all rotation quadrants, angle wrap-around, zero-distance, offset sensors, polygon containment, grid sampling counts and bounds, full/none/partial coverage, range boundary, polygon zones, undefined rotationDeg default, grid precision, 2×2 batch matrix, and empty-input edge cases.",
+      "verification_result": "Ran npx vitest run src/__tests__/unit/zoneCoverage.test.ts — all 31 tests passed in 15ms. Also confirmed T01's 34 coordinateTransform tests still pass (65 total).",
       "duration": "",
-      "completed_at": null,
+      "completed_at": "2026-03-31T09:53:30.336Z",
       "blocker_discovered": false,
-      "deviations": "",
-      "known_issues": "",
-      "key_files": [],
-      "key_decisions": [],
-      "full_summary_md": "",
+      "deviations": "Fixed four test geometries after initial run — zone placements were incorrect (zone outside narrow FOV, zone at degenerate atan2 position). Added zero-distance guard to isPointInCone for the sensor-position edge case.",
+      "known_issues": "None.",
+      "key_files": [
+        "everything-presence-mmwave-configurator/backend/src/domain/zoneCoverage.ts",
+        "everything-presence-mmwave-configurator/backend/src/__tests__/unit/zoneCoverage.test.ts"
+      ],
+      "key_decisions": [
+        "Duplicated isPointInPolygon in backend rather than shared module — different runtimes make sharing costly for a 15-line function",
+        "Zero-distance points treated as inside cone — atan2(0,0) is degenerate, physically sensor covers its own position"
+      ],
+      "full_summary_md": "---\nid: T02\nparent: S01\nmilestone: M004\nkey_files:\n  - everything-presence-mmwave-configurator/backend/src/domain/zoneCoverage.ts\n  - everything-presence-mmwave-configurator/backend/src/__tests__/unit/zoneCoverage.test.ts\nkey_decisions:\n  - Duplicated isPointInPolygon in backend rather than shared module — different runtimes make sharing costly for a 15-line function\n  - Zero-distance points treated as inside cone — atan2(0,0) is degenerate, physically sensor covers its own position\nduration: \"\"\nverification_result: passed\ncompleted_at: 2026-03-31T09:53:30.344Z\nblocker_discovered: false\n---\n\n# T02: Built zoneCoverage.ts with grid-point sampling FOV cone analysis — 31 tests pass covering all rotations, zone types, boundary conditions, and batch matrix computation\n\n**Built zoneCoverage.ts with grid-point sampling FOV cone analysis — 31 tests pass covering all rotations, zone types, boundary conditions, and batch matrix computation**\n\n## What Happened\n\nCreated zoneCoverage.ts in backend/src/domain/ with five exported pure functions: isPointInPolygon (ray-casting), isPointInCone (FOV cone test with +90° offset, angle normalisation, zero-distance guard), getZoneSamplePoints (uniform grid for ZoneRect center-based and ZonePolygon bounding-box filtered), computeZoneCoverage (single-sensor fraction 0.0–1.0), and computeAllCoverage (batch zones×sensors matrix). Wrote 31 tests across 5 describe blocks covering all rotation quadrants, angle wrap-around, zero-distance, offset sensors, polygon containment, grid sampling counts and bounds, full/none/partial coverage, range boundary, polygon zones, undefined rotationDeg default, grid precision, 2×2 batch matrix, and empty-input edge cases.\n\n## Verification\n\nRan npx vitest run src/__tests__/unit/zoneCoverage.test.ts — all 31 tests passed in 15ms. Also confirmed T01's 34 coordinateTransform tests still pass (65 total).\n\n## Verification Evidence\n\n| # | Command | Exit Code | Verdict | Duration |\n|---|---------|-----------|---------|----------|\n| 1 | `cd everything-presence-mmwave-configurator && npx vitest run src/__tests__/unit/zoneCoverage.test.ts` | 0 | ✅ pass | 311ms |\n| 2 | `cd everything-presence-mmwave-configurator && npx vitest run src/__tests__/unit/coordinateTransform.test.ts src/__tests__/unit/zoneCoverage.test.ts` | 0 | ✅ pass | 307ms |\n\n\n## Deviations\n\nFixed four test geometries after initial run — zone placements were incorrect (zone outside narrow FOV, zone at degenerate atan2 position). Added zero-distance guard to isPointInCone for the sensor-position edge case.\n\n## Known Issues\n\nNone.\n\n## Files Created/Modified\n\n- `everything-presence-mmwave-configurator/backend/src/domain/zoneCoverage.ts`\n- `everything-presence-mmwave-configurator/backend/src/__tests__/unit/zoneCoverage.test.ts`\n",
       "description": "Build `zoneCoverage.ts` in `backend/src/domain/` with pure functions that compute what percentage of each zone falls within each sensor's FOV cone.\n\n## Context\n\nThe existing frontend coverage check (`RoomBuilderPage.tsx:511-542`) uses vertex-in-cone to classify zones as full/partial/none for a single sensor. S01 needs to generalize this to:\n- N sensors per room\n- Numeric overlap percentage (0.0–1.0) instead of coarse classification\n- Grid-point sampling for better precision than vertex-only checks\n\nThe algorithm: scatter a grid of sample points across the zone area, check each against the sensor's FOV cone (range + angle), count what fraction falls inside.\n\n## Key math (from frontend reference)\n- Sensor FOV cone is defined by: position (x,y), rotation (+90° offset), half-angle (fovDeg/2), max range (maxRangeMeters * 1000 → mm)\n- Point-in-cone test: `distance <= maxRange AND |angleDiff| <= halfFov` where angleDiff is normalized to [-π, π]\n- The +90° offset means rotationDeg=0 → sensor points along +Y axis\n\n## Profile data structure\nDevice profiles store FOV and range in `limits`: `{ maxZones, maxRangeMeters, fieldOfViewDegrees, ... }`. Profiles are loaded from `config/device-profiles/*.json`.\n\n## Steps\n1. Create `backend/src/domain/zoneCoverage.ts`\n2. Implement `isPointInCone(point: Point, sensorPos: Point, rotationDeg: number, fovDeg: number, maxRangeMm: number): boolean` — the core geometric test\n3. Implement `getZoneSamplePoints(zone: Zone, gridSize: number): Point[]` — generates grid points within the zone boundary. For ZoneRect (center-based): grid within (x±width/2, y±height/2). For ZonePolygon: grid within bounding box, filtered to points inside the polygon using ray-casting point-in-polygon test.\n4. Implement `computeZoneCoverage(zone: Zone, sensorPlacement: DevicePlacement, fovDeg: number, maxRangeMm: number, gridSize?: number): number` — returns overlap fraction 0.0–1.0\n5. Implement batch helper: `computeAllCoverage(zones: Zone[], sensors: Array<{ placement: DevicePlacement, fovDeg: number, maxRangeMm: number }>): number[][]` — returns coverage matrix [zoneIndex][sensorIndex]\n6. Need a backend `isPointInPolygon` — either import from a shared location or implement locally (ray-casting algorithm, same as `frontend/src/components/canvas/geometry.ts:isPointInPolygon`)\n7. Create `backend/src/__tests__/unit/zoneCoverage.test.ts` with tests:\n   - Zone fully inside cone → coverage ≈ 1.0 (within grid precision)\n   - Zone fully outside cone (behind sensor) → coverage ≈ 0.0\n   - Zone beyond max range → coverage ≈ 0.0\n   - Zone straddling cone edge → coverage between 0.0 and 1.0\n   - Zone at exact max range boundary → partial coverage\n   - ZonePolygon coverage (triangle inside cone)\n   - Batch coverage: 2 zones × 2 sensors → correct 2×2 matrix\n   - Grid size affects precision: larger grid → more accurate result\n   - Sensor with rotationDeg undefined → defaults to 0°\n\n## Must-Haves\n- [ ] `isPointInCone` uses +90° rotation offset matching frontend convention\n- [ ] Angle difference normalization handles wrap-around correctly\n- [ ] ZoneRect sample points use CENTER-based convention (x,y = center)\n- [ ] ZonePolygon sample points filtered by ray-casting point-in-polygon\n- [ ] Grid size is configurable with sensible default (10)\n- [ ] All unit tests pass",
       "estimate": "1h",
       "files": [
@@ -1704,19 +1710,26 @@
       "milestone_id": "M004",
       "slice_id": "S01",
       "id": "T03",
-      "title": "Implement zone-to-device slot assignment engine with EP One exclusion and unit tests",
-      "status": "pending",
-      "one_liner": "",
-      "narrative": "",
-      "verification_result": "",
+      "title": "Built zoneAssignment.ts with coverage-threshold-gated slot allocation across three zone-type pools — 24 unit tests pass covering slot routing, EP One exclusion, overflow, multi-sensor overlap, and edge cases",
+      "status": "complete",
+      "one_liner": "Built zoneAssignment.ts with coverage-threshold-gated slot allocation across three zone-type pools — 24 unit tests pass covering slot routing, EP One exclusion, overflow, multi-sensor overlap, and edge cases",
+      "narrative": "Created zoneAssignment.ts with two exported pure functions: assignZonesToDevices() maps room zones to device slot IDs by finding eligible sensors above a coverage threshold, sorting by coverage descending, and allocating slots from the correct pool (regular/exclusion/entry). getAvailableSlots() returns available slots for a zone type respecting profile caps and used slots. EP One devices (all-zero caps) are excluded entirely per R012. Zones can be assigned to multiple sensors independently. Unassigned zones get structured reason strings distinguishing no-eligible-sensors, below-threshold, and pool-full scenarios. Fixed a bug where EP One sensor coverage polluted the unassigned-reason logic. Test suite covers 24 scenarios including sequential allocation, multi-sensor overlap, threshold filtering, EP One exclusion, slot overflow, zone-type routing, EP Pro entry exclusion, mixed types, and edge cases.",
+      "verification_result": "Ran vitest on zoneAssignment.test.ts: 24/24 tests pass. Ran full slice verification across all three domain modules (coordinateTransform + zoneCoverage + zoneAssignment): 89/89 tests pass.",
       "duration": "",
-      "completed_at": null,
+      "completed_at": "2026-03-31T10:18:07.938Z",
       "blocker_discovered": false,
-      "deviations": "",
-      "known_issues": "",
-      "key_files": [],
-      "key_decisions": [],
-      "full_summary_md": "",
+      "deviations": "Refined unassigned-reason logic to track eligible coverages separately from excluded sensors — discovered during testing, not a plan change.",
+      "known_issues": "None.",
+      "key_files": [
+        "everything-presence-mmwave-configurator/backend/src/domain/zoneAssignment.ts",
+        "everything-presence-mmwave-configurator/backend/src/__tests__/unit/zoneAssignment.test.ts"
+      ],
+      "key_decisions": [
+        "EP One exclusion uses all-zero cap detection (maxZones=0 AND maxExclusionZones=0 AND maxEntryZones=0) rather than hardcoded device name check — profile-driven",
+        "Zones assigned to multiple qualifying sensors independently — each sensor gets its own slot",
+        "Qualifying sensors sorted by coverage descending before allocation"
+      ],
+      "full_summary_md": "---\nid: T03\nparent: S01\nmilestone: M004\nkey_files:\n  - everything-presence-mmwave-configurator/backend/src/domain/zoneAssignment.ts\n  - everything-presence-mmwave-configurator/backend/src/__tests__/unit/zoneAssignment.test.ts\nkey_decisions:\n  - EP One exclusion uses all-zero cap detection (maxZones=0 AND maxExclusionZones=0 AND maxEntryZones=0) rather than hardcoded device name check — profile-driven\n  - Zones assigned to multiple qualifying sensors independently — each sensor gets its own slot\n  - Qualifying sensors sorted by coverage descending before allocation\nduration: \"\"\nverification_result: passed\ncompleted_at: 2026-03-31T10:18:07.938Z\nblocker_discovered: false\n---\n\n# T03: Built zoneAssignment.ts with coverage-threshold-gated slot allocation across three zone-type pools — 24 unit tests pass covering slot routing, EP One exclusion, overflow, multi-sensor overlap, and edge cases\n\n**Built zoneAssignment.ts with coverage-threshold-gated slot allocation across three zone-type pools — 24 unit tests pass covering slot routing, EP One exclusion, overflow, multi-sensor overlap, and edge cases**\n\n## What Happened\n\nCreated zoneAssignment.ts with two exported pure functions: assignZonesToDevices() maps room zones to device slot IDs by finding eligible sensors above a coverage threshold, sorting by coverage descending, and allocating slots from the correct pool (regular/exclusion/entry). getAvailableSlots() returns available slots for a zone type respecting profile caps and used slots. EP One devices (all-zero caps) are excluded entirely per R012. Zones can be assigned to multiple sensors independently. Unassigned zones get structured reason strings distinguishing no-eligible-sensors, below-threshold, and pool-full scenarios. Fixed a bug where EP One sensor coverage polluted the unassigned-reason logic. Test suite covers 24 scenarios including sequential allocation, multi-sensor overlap, threshold filtering, EP One exclusion, slot overflow, zone-type routing, EP Pro entry exclusion, mixed types, and edge cases.\n\n## Verification\n\nRan vitest on zoneAssignment.test.ts: 24/24 tests pass. Ran full slice verification across all three domain modules (coordinateTransform + zoneCoverage + zoneAssignment): 89/89 tests pass.\n\n## Verification Evidence\n\n| # | Command | Exit Code | Verdict | Duration |\n|---|---------|-----------|---------|----------|\n| 1 | `npx vitest run src/__tests__/unit/zoneAssignment.test.ts` | 0 | ✅ pass | 3000ms |\n| 2 | `npx vitest run coordinateTransform + zoneCoverage + zoneAssignment (all 3 domain modules)` | 0 | ✅ pass | 3100ms |\n\n\n## Deviations\n\nRefined unassigned-reason logic to track eligible coverages separately from excluded sensors — discovered during testing, not a plan change.\n\n## Known Issues\n\nNone.\n\n## Files Created/Modified\n\n- `everything-presence-mmwave-configurator/backend/src/domain/zoneAssignment.ts`\n- `everything-presence-mmwave-configurator/backend/src/__tests__/unit/zoneAssignment.test.ts`\n",
       "description": "Build `zoneAssignment.ts` in `backend/src/domain/` with pure functions that map room-level zones to specific device zone slots, respecting profile limits and coverage thresholds.\n\n## Context\n\nEach EP device has fixed slot pools:\n- **EP Lite**: 4 regular (zone1-zone4), 2 exclusion (exclusion1-exclusion2), 2 entry (entry1-entry2)\n- **EP Pro**: 4 regular, 2 exclusion, 0 entry\n- **EP One**: 0 regular, 0 exclusion, 0 entry (EXCLUDED entirely — R012)\n\nProfile data from `config/device-profiles/*.json` — limits are in `profile.limits`: `{ maxZones, maxExclusionZones?, maxEntryZones?, ... }`\n\nThe assignment engine takes room zones, sensors with their profiles, and a coverage matrix (from `zoneCoverage.ts`), then assigns each zone to device slots on sensors that cover it above a threshold.\n\n## Zone type → slot pool mapping\n- `zone.type === 'regular'` → regular zone slots (zone1, zone2, zone3, zone4) — capped by `maxZones`\n- `zone.type === 'exclusion'` → exclusion slots (exclusion1, exclusion2) — capped by `maxExclusionZones` (default 0)\n- `zone.type === 'entry'` → entry slots (entry1, entry2) — capped by `maxEntryZones` (default 0)\n\n## Steps\n1. Create `backend/src/domain/zoneAssignment.ts`\n2. Define types:\n   - `SlotId`: `'zone1' | 'zone2' | 'zone3' | 'zone4' | 'exclusion1' | 'exclusion2' | 'entry1' | 'entry2'`\n   - `ZoneAssignment`: `{ zoneId: string, sensorDeviceId: string, slotId: SlotId, coverage: number }`\n   - `AssignmentResult`: `{ assignments: ZoneAssignment[], unassigned: Array<{ zoneId: string, reason: string }>, warnings: string[] }`\n   - `SensorProfile`: `{ deviceId: string, placement: DevicePlacement, maxZones: number, maxExclusionZones: number, maxEntryZones: number, fovDeg: number, maxRangeMm: number }`\n3. Implement `assignZonesToDevices(zones: Zone[], sensors: SensorProfile[], coverageMatrix: number[][], overlapThreshold?: number): AssignmentResult`\n   - Default overlapThreshold = 0.1 (10% coverage minimum)\n   - For each zone: find sensors where coverage >= threshold\n   - For each qualifying sensor: allocate the next available slot in the correct pool\n   - If no sensor covers a zone above threshold: add to `unassigned` with reason\n   - If a sensor's slot pool is full: add warning and skip that sensor for that zone\n   - Skip sensors with maxZones=0 entirely (EP One — R012)\n4. Implement `getAvailableSlots(zoneType: Zone['type'], profile: SensorProfile, usedSlots: Set<SlotId>): SlotId[]`\n5. Create `backend/src/__tests__/unit/zoneAssignment.test.ts` with tests:\n   - Single sensor covers all zones → sequential slot allocation (zone1, zone2, zone3, zone4)\n   - Multi-sensor overlap: same zone assigned to multiple sensors' slots\n   - Zone below coverage threshold → unassigned with reason\n   - EP One sensor (maxZones=0) → completely skipped, no error\n   - Slot overflow: 5 regular zones with 4 slots → 5th goes to unassigned\n   - Exclusion zone → uses exclusion1/exclusion2 slots, not regular slots\n   - Entry zone → uses entry1/entry2 slots, not regular slots\n   - EP Pro with 0 entry zones → entry zones go to unassigned\n   - Mixed zone types: regular + exclusion + entry allocated from separate pools\n   - Empty inputs: no zones → empty result; no sensors → all unassigned\n   - Custom threshold: 0.5 threshold filters out low-coverage sensors\n\n## Must-Haves\n- [ ] Zone types route to correct slot pools (regular/exclusion/entry)\n- [ ] EP One devices (maxZones=0) are completely excluded from assignment\n- [ ] Slot overflow produces unassigned entries with clear reason, not an error\n- [ ] Coverage threshold is configurable with sensible default\n- [ ] All unit tests pass",
       "estimate": "1h",
       "files": [
@@ -2200,6 +2213,50 @@
       "verdict": "✅ pass",
       "duration_ms": 3800,
       "created_at": "2026-03-31T09:29:05.157Z"
+    },
+    {
+      "id": 32,
+      "task_id": "T02",
+      "slice_id": "S01",
+      "milestone_id": "M004",
+      "command": "cd everything-presence-mmwave-configurator && npx vitest run src/__tests__/unit/zoneCoverage.test.ts",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 311,
+      "created_at": "2026-03-31T09:53:30.336Z"
+    },
+    {
+      "id": 33,
+      "task_id": "T02",
+      "slice_id": "S01",
+      "milestone_id": "M004",
+      "command": "cd everything-presence-mmwave-configurator && npx vitest run src/__tests__/unit/coordinateTransform.test.ts src/__tests__/unit/zoneCoverage.test.ts",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 307,
+      "created_at": "2026-03-31T09:53:30.336Z"
+    },
+    {
+      "id": 34,
+      "task_id": "T03",
+      "slice_id": "S01",
+      "milestone_id": "M004",
+      "command": "npx vitest run src/__tests__/unit/zoneAssignment.test.ts",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 3000,
+      "created_at": "2026-03-31T10:18:07.938Z"
+    },
+    {
+      "id": 35,
+      "task_id": "T03",
+      "slice_id": "S01",
+      "milestone_id": "M004",
+      "command": "npx vitest run coordinateTransform + zoneCoverage + zoneAssignment (all 3 domain modules)",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 3100,
+      "created_at": "2026-03-31T10:18:07.938Z"
     }
   ]
 }

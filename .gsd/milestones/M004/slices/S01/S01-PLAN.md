@@ -52,7 +52,7 @@ The frontend uses center-based ZoneRect (x,y = center, width/height = extents) a
   - Estimate: 1h
   - Files: everything-presence-mmwave-configurator/backend/src/domain/coordinateTransform.ts, everything-presence-mmwave-configurator/backend/src/__tests__/unit/coordinateTransform.test.ts
   - Verify: cd everything-presence-mmwave-configurator/backend && npx vitest run src/__tests__/unit/coordinateTransform.test.ts
-- [ ] **T02: Implement per-sensor zone coverage analyzer with grid-point sampling and unit tests** — Build `zoneCoverage.ts` in `backend/src/domain/` with pure functions that compute what percentage of each zone falls within each sensor's FOV cone.
+- [x] **T02: Built zoneCoverage.ts with grid-point sampling FOV cone analysis — 31 tests pass covering all rotations, zone types, boundary conditions, and batch matrix computation** — Build `zoneCoverage.ts` in `backend/src/domain/` with pure functions that compute what percentage of each zone falls within each sensor's FOV cone.
 
 ## Context
 
@@ -99,7 +99,7 @@ Device profiles store FOV and range in `limits`: `{ maxZones, maxRangeMeters, fi
   - Estimate: 1h
   - Files: everything-presence-mmwave-configurator/backend/src/domain/zoneCoverage.ts, everything-presence-mmwave-configurator/backend/src/__tests__/unit/zoneCoverage.test.ts
   - Verify: cd everything-presence-mmwave-configurator/backend && npx vitest run src/__tests__/unit/zoneCoverage.test.ts
-- [ ] **T03: Implement zone-to-device slot assignment engine with EP One exclusion and unit tests** — Build `zoneAssignment.ts` in `backend/src/domain/` with pure functions that map room-level zones to specific device zone slots, respecting profile limits and coverage thresholds.
+- [x] **T03: Built zoneAssignment.ts with coverage-threshold-gated slot allocation across three zone-type pools — 24 unit tests pass covering slot routing, EP One exclusion, overflow, multi-sensor overlap, and edge cases** — Build `zoneAssignment.ts` in `backend/src/domain/` with pure functions that map room-level zones to specific device zone slots, respecting profile limits and coverage thresholds.
 
 ## Context
 
