@@ -152,4 +152,9 @@ export class MockReadTransport implements IHaReadTransport {
 	async waitUntilReady(): Promise<void> {
 		// no-op — always ready
 	}
+
+	async call(_command: Record<string, unknown>): Promise<unknown> {
+		// no-op — tests that need WS command results should override this
+		return {};
+	}
 }

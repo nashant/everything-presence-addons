@@ -93,6 +93,7 @@ export interface ZoneRect {
   enabled?: boolean; // Whether this zone slot is active/configured
   label?: string; // Custom display label (e.g., "Bed", "Chair")
   aggregationMode?: 'or' | 'majority' | 'no_change_on_tie'; // Aggregation strategy for multi-sensor rooms
+  overlapThreshold?: number; // 0-1, fraction of vertices required for 'full' coverage (default 0.1)
 }
 
 export interface ZonePolygon {
@@ -102,6 +103,7 @@ export interface ZonePolygon {
   enabled?: boolean;
   label?: string;
   aggregationMode?: 'or' | 'majority' | 'no_change_on_tie'; // Aggregation strategy for multi-sensor rooms
+  overlapThreshold?: number; // 0-1, fraction of vertices required for 'full' coverage (default 0.1)
 }
 
 // Union type for both zone shapes

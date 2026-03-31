@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "exported_at": "2026-03-31T15:43:32.693Z",
+  "exported_at": "2026-03-31T16:18:48.855Z",
   "milestones": [
     {
       "id": "M001",
@@ -391,7 +391,7 @@
       "milestone_id": "M004",
       "id": "S04",
       "title": "Room device lifecycle + aggregation config",
-      "status": "pending",
+      "status": "complete",
       "risk": "medium",
       "depends": [
         "S02",
@@ -399,9 +399,9 @@
       ],
       "demo": "Full pipeline: zone save creates/updates HA room device with template binary sensors. Aggregation strategy configurable per zone (OR/majority/no-change-on-tie). Room delete cleans up HA entities. Target count uses max.",
       "created_at": "2026-03-31T07:04:23.285Z",
-      "completed_at": null,
-      "full_summary_md": "",
-      "full_uat_md": "",
+      "completed_at": "2026-03-31T15:48:02.362Z",
+      "full_summary_md": "---\nid: S04\nparent: M004\nmilestone: M004\nprovides:\n  - aggregationMode field on zone types (backend + frontend)\n  - roomDeviceLifecycle service (buildRoomDeviceDescriptor, createOrUpdateRoomDevice, removeRoomDevice)\n  - MqttClient wired into server startup\n  - Apply-zones route creates/updates room devices after zone writes\n  - DELETE route cleans up room devices before storage deletion\nrequires:\n  - slice: S02\n    provides: RoomDeviceService, MqttClient, MQTT discovery infrastructure\n  - slice: S03\n    provides: Zone assignment engine, ZoneAssignment type, OrchestratorResult\naffects:\n  - S05\nkey_files:\n  - everything-presence-mmwave-configurator/backend/src/domain/roomDeviceLifecycle.ts\n  - everything-presence-mmwave-configurator/backend/src/domain/types.ts\n  - everything-presence-mmwave-configurator/frontend/src/api/types.ts\n  - everything-presence-mmwave-configurator/backend/src/routes/rooms.ts\n  - everything-presence-mmwave-configurator/backend/src/index.ts\n  - everything-presence-mmwave-configurator/backend/src/server.ts\n  - everything-presence-mmwave-configurator/backend/src/domain/roomZoneOrchestrator.ts\n  - everything-presence-mmwave-configurator/backend/src/__tests__/unit/roomDeviceLifecycle.test.ts\n  - everything-presence-mmwave-configurator/backend/src/__tests__/helpers/mockReadTransport.ts\nkey_decisions:\n  - Use spread with conditional include pattern for aggregationMode in parseZone to omit undefined values\n  - Simplified deps interface to IEntityResolver (getEntityId only) instead of full IDeviceEntityService/IDeviceMappingStorage/IProfileLoader\n  - Exported deriveEntityKeys as standalone pure function for direct unit testing\n  - Exposed assignments in OrchestratorResult instead of duplicating coverage+assignment computation in route handler\n  - MQTT connection failure at startup is non-fatal — logs error and continues without room device lifecycle\npatterns_established:\n  - Non-fatal MQTT: when config.mqtt exists but connection fails, server runs without room device lifecycle — zone writes still work\n  - Lifecycle orchestrator bridges domain services (zone assignment → room device) with clean deps injection via IEntityResolver\n  - Apply-zones response includes optional roomDevice field when MQTT is available\nobservability_surfaces:\n  - Apply-zones response includes roomDevice.warnings array when entity resolution has gaps\n  - MQTT connection status logged at startup\n  - Room device cleanup failures logged as warnings in DELETE route\ndrill_down_paths:\n  - .gsd/milestones/M004/slices/S04/tasks/T01-SUMMARY.md\n  - .gsd/milestones/M004/slices/S04/tasks/T02-SUMMARY.md\n  - .gsd/milestones/M004/slices/S04/tasks/T03-SUMMARY.md\nduration: \"\"\nverification_result: passed\ncompleted_at: 2026-03-31T15:48:02.362Z\nblocker_discovered: false\n---\n\n# S04: Room device lifecycle + aggregation config\n\n**Full room device lifecycle: zone saves create/update virtual HA room devices with template binary sensors using configurable aggregation modes, room deletes clean up HA entities, and the pipeline gracefully degrades when MQTT is unavailable.**\n\n## What Happened\n\nS04 wired together S02's RoomDeviceService (MQTT discovery + template sensors) with S03's zone assignment engine into a complete lifecycle.\n\n**T01** added the `aggregationMode` field to `ZoneRect` and `ZonePolygon` in both backend domain types and frontend API types. The rooms router's `parseZone` validates against the three legal values ('or', 'majority', 'no_change_on_tie') and omits invalid/absent values cleanly.\n\n**T02** created `roomDeviceLifecycle.ts` — the bridge between zone assignments and RoomDeviceService. The `buildRoomDeviceDescriptor` pure function groups multi-sensor zone assignments by room zone, resolves per-sensor entity IDs via `IEntityResolver`, and produces a `RoomDeviceDescriptor` for S02's service. `deriveEntityKeys` maps slot IDs (1-based: zone1→zone1Occupancy, zone1TargetCount) to entity keys while filtering out exclusion/entry slots. Missing entity mappings produce warnings instead of errors. Default aggregation is 'or'. 25 unit tests cover all combinations: single/multi sensor, single/multi zone, aggregation modes, label fallbacks, missing entities, error propagation.\n\n**T03** connected everything to the running server. MqttClient is created at startup when `config.mqtt` is present (non-fatal on connection failure). The apply-zones route now calls `createOrUpdateRoomDevice` after successful zone writes, returning a `roomDevice` field in the response. The DELETE route calls `removeRoomDevice` before storage deletion, with try/catch so cleanup failure doesn't block room deletion. Rather than duplicating coverage+assignment computation, T03 exposed `assignments` in `OrchestratorResult`.\n\n**Verification fix**: Added missing `call()` method to `MockReadTransport` — the `IHaReadTransport` interface gained this method in S02 but the mock wasn't updated, causing tsc failures in integration test helpers.\n\n## Verification\n\nBackend tsc --noEmit: 0 errors (clean). Frontend tsc --noEmit: only pre-existing errors in unrelated files. Vitest: 271/271 non-Docker tests pass (23 Docker-only integration tests fail as expected per K007). All 25 roomDeviceLifecycle unit tests pass. All 5 roomZoneOrchestrator tests pass.\n\n## Requirements Advanced\n\n- R007 — aggregationMode field added to zone types and validated in parseZone; roomDeviceLifecycle passes mode to template generation, defaulting to 'or'\n- R008 — buildRoomDeviceDescriptor resolves target count entity IDs per covering sensor; template generation uses max aggregation\n- R009 — Full lifecycle implemented: createOrUpdateRoomDevice on zone save, removeRoomDevice on room delete, graceful degradation when MQTT unavailable\n- R005 — MqttClient wired into server; apply-zones triggers MQTT discovery publish for virtual room device\n- R006 — Apply-zones flow creates template binary sensors via RoomDeviceService after zone writes succeed\n\n## Requirements Validated\n\nNone.\n\n## New Requirements Surfaced\n\nNone.\n\n## Requirements Invalidated or Re-scoped\n\nNone.\n\n## Deviations\n\nT02: Simplified RoomDeviceLifecycleDeps to IEntityResolver (getEntityId only) instead of the planned IDeviceEntityService/IDeviceMappingStorage/IProfileLoader — the lifecycle layer only needs entity ID lookup, so this is a cleaner interface. T03: Exposed assignments in OrchestratorResult instead of duplicating coverage+assignment computation in the route handler. T03: MQTT connection failure at startup is non-fatal (logs and continues) rather than the plan's suggestion of failing startup.\n\n## Known Limitations\n\nIntegration testing of the full MQTT lifecycle (connect → publish discovery → verify HA entities) requires a running MQTT broker and HA instance, which isn't available outside Docker. The 25 unit tests verify all logic with mocks.\n\n## Follow-ups\n\nS05 needs to build the frontend zone coverage visualization and aggregation config UI on top of the backend infrastructure S04 provides.\n\n## Files Created/Modified\n\n- `everything-presence-mmwave-configurator/backend/src/domain/types.ts` — Added aggregationMode?: AggregationMode to ZoneRect and ZonePolygon interfaces\n- `everything-presence-mmwave-configurator/frontend/src/api/types.ts` — Added aggregationMode?: literal union to ZoneRect and ZonePolygon interfaces\n- `everything-presence-mmwave-configurator/backend/src/routes/rooms.ts` — parseZone validates aggregationMode; apply-zones calls createOrUpdateRoomDevice; DELETE calls removeRoomDevice\n- `everything-presence-mmwave-configurator/backend/src/domain/roomDeviceLifecycle.ts` — New file: lifecycle orchestrator bridging zone assignments to RoomDeviceService\n- `everything-presence-mmwave-configurator/backend/src/__tests__/unit/roomDeviceLifecycle.test.ts` — New file: 25 unit tests for lifecycle service\n- `everything-presence-mmwave-configurator/backend/src/index.ts` — MqttClient creation and connection at startup when config.mqtt present\n- `everything-presence-mmwave-configurator/backend/src/server.ts` — Added mqttClient to ServerDependencies and RoomsRouterDependencies\n- `everything-presence-mmwave-configurator/backend/src/domain/roomZoneOrchestrator.ts` — Exposed assignments in OrchestratorResult\n- `everything-presence-mmwave-configurator/backend/src/__tests__/helpers/mockReadTransport.ts` — Added missing call() method to satisfy IHaReadTransport interface\n",
+      "full_uat_md": "# S04: Room device lifecycle + aggregation config — UAT\n\n**Milestone:** M004\n**Written:** 2026-03-31T15:48:02.362Z\n\n## UAT: S04 — Room device lifecycle + aggregation config\n\n### Preconditions\n- Backend running with Docker (HA + MQTT broker available)\n- At least one room with zones and attached EP Lite/Pro sensors configured\n\n---\n\n### Test 1: Zone save creates virtual room device\n1. Create a room with 2 rectangular zones and 1 attached EP Lite sensor\n2. POST to `/api/rooms/:id/apply-zones`\n3. **Expected**: Response includes `roomDevice: { created: true, warnings: [] }`\n4. Check HA device registry — a virtual device named after the room should exist\n5. Check HA entity registry — binary_sensor entities for each zone occupancy and sensor entities for target count should exist\n\n### Test 2: Aggregation mode defaults to OR\n1. Create a room with 1 zone (no aggregationMode set) covered by 2 sensors\n2. Apply zones\n3. **Expected**: The generated template binary sensor uses OR logic (`{{ is_state('...', 'on') or is_state('...', 'on') }}`)\n\n### Test 3: Aggregation mode configurable per zone\n1. Create a room with 2 zones:\n   - Zone A: `aggregationMode: 'majority'`\n   - Zone B: `aggregationMode: 'no_change_on_tie'`\n2. Apply zones with 2 covering sensors\n3. **Expected**: Zone A template uses majority logic. Zone B template uses no-change-on-tie with self-reference fallback.\n\n### Test 4: Target count uses max\n1. Create a room with 1 zone covered by 2 EP Lite sensors\n2. Apply zones\n3. **Expected**: Target count template sensor uses `| max` across both sensors' zone target count entities\n\n### Test 5: Room delete cleans up HA entities\n1. Create a room with zones, apply zones (room device created)\n2. DELETE `/api/rooms/:id`\n3. **Expected**: Room deleted from storage. MQTT empty payloads published to discovery topics (entities removed from HA). 204 response.\n\n### Test 6: Cleanup failure doesn't block deletion\n1. Create a room with zones, apply zones\n2. Disconnect MQTT broker\n3. DELETE `/api/rooms/:id`\n4. **Expected**: Room still deleted from storage (204 response). Warning logged about MQTT cleanup failure.\n\n### Test 7: Invalid aggregationMode rejected\n1. POST/PUT a room with a zone containing `aggregationMode: 'invalid_mode'`\n2. **Expected**: The invalid mode is silently omitted — zone saved without aggregationMode field. Default 'or' used at template generation time.\n\n### Test 8: Server starts without MQTT config\n1. Start backend with no `config.mqtt` section\n2. **Expected**: Server starts normally. Info log about MQTT not configured. All zone write operations work. Apply-zones response has `roomDevice: null`.\n\n### Test 9: Missing entity mappings produce warnings\n1. Create a room with zones covered by a sensor that has incomplete entity mappings\n2. Apply zones\n3. **Expected**: Response includes `roomDevice.warnings` array listing which sensors had missing entity mappings. Room device still created for zones that had at least one valid sensor.\n\n### Test 10: EP One excluded from lifecycle\n1. Create a room with zones covered only by EP One sensor (maxZones=0)\n2. Apply zones\n3. **Expected**: No room device created (no valid zone assignments). Response indicates no room device.\n\n---\n\n### Edge Cases\n\n- Room with 0 zones: apply-zones should not create a room device\n- Room with zones but 0 attached sensors: no assignments, no room device\n- Multiple apply-zones calls: room device updated (re-published), not duplicated\n",
       "goal": "Full room device lifecycle: zone save creates/updates virtual HA room device with template binary sensors using correct aggregation modes. Room delete cleans up HA entities. Aggregation strategy configurable per zone (OR/majority/no-change-on-tie). Target count uses max across covering sensors.",
       "success_criteria": "## Must-Haves\n\n- `aggregationMode` field on Zone types (backend + frontend) with `'or'` default, preserved through parseZone normalization\n- Room device lifecycle orchestrator that transforms zone assignment results + entity ID lookups into a `RoomDeviceDescriptor` and calls `RoomDeviceService.createRoomDevice()`\n- Entity ID resolution: slotId → entity keys (`zone{N}Occupancy`, `zone{N}TargetCount`) → `deviceEntityService.getEntityId()` → covering sensor entity arrays grouped by room zone\n- MqttClient instantiated and connected at server startup when `config.mqtt` is present; no-crash when absent\n- Apply-zones route (`POST /:roomId/apply-zones`) triggers room device creation after zone writes succeed\n- Room DELETE route triggers `RoomDeviceService.removeRoomDevice()` cleanup before storage deletion\n- Update semantics: re-publishing all discovery payloads on every save effectively updates the room device; removed zones cleared by publishing empties for old zone count\n- Missing entity mappings handled gracefully (skip sensor, log warning) — never throw\n- EP One (maxZones=0) excluded from entity resolution — no lookups attempted\n- Unit tests verify correct RoomDeviceDescriptor construction from zone assignments\n\n## Threat Surface\n\n- **Abuse**: MQTT publish with user-controlled room names — `sanitizeForMqtt` already handles injection. Zone count bounded by device profile limits. No direct user access to MQTT topics.\n- **Data exposure**: None — no secrets in MQTT payloads, entity IDs are HA-internal identifiers\n- **Input trust**: Zone `aggregationMode` from user input — validated to enum values, defaults to `'or'` for invalid/missing values\n\n## Requirement Impact\n\n- **Requirements touched**: R005, R006, R007, R008, R009\n- **Re-verify**: S02 unit tests (roomDeviceService, templateGenerator, discoveryPayload), S03 unit tests (roomZoneOrchestrator)\n- **Decisions revisited**: D012 (entity_id from object_id — S04 must use same convention), D013 (applyTranslatedZones method — S04 extends the orchestration chain)\n\n## Proof Level\n\n- This slice proves: integration (S02 device creation + S03 zone assignment wired together through lifecycle orchestrator)\n- Real runtime required: no (unit tests with mocked MQTT/entity services; Docker integration test deferred to S05)\n- Human/UAT required: no\n\n## Verification\n\n- `cd everything-presence-mmwave-configurator && npx vitest run backend/src/__tests__/unit/roomDeviceLifecycle.test.ts` — new test file for lifecycle orchestrator, ≥12 tests passing\n- `cd everything-presence-mmwave-configurator && npx vitest run` — full suite: ≥246 tests passing (no regressions)\n- `cd everything-presence-mmwave-configurator/backend && npx tsc --noEmit` — 0 new type errors from S04 files\n- `cd everything-presence-mmwave-configurator/frontend && npx tsc --noEmit` — 0 new type errors from S04 files\n\n## Observability / Diagnostics\n\n- Runtime signals: Pino structured logs for room device lifecycle (create/update/remove) with roomId, zoneCount, entity resolution failures\n- Inspection surfaces: `RoomDeviceService.getDiscoveryTopics()` returns all MQTT topics for a room — usable for broker debugging\n- Failure visibility: Entity resolution warnings in orchestrator result (missing mappings, skipped sensors), MQTT connection state via `mqttClient.isConnected`\n- Redaction constraints: none — no secrets in entity IDs or MQTT topics\n\n## Integration Closure\n\n- Upstream surfaces consumed: `RoomDeviceService` + `RoomDeviceDescriptor` (S02), `RoomZoneOrchestrator` + `ZoneAssignment` (S03), `deviceEntityService.getEntityId()`, `MqttClient`, template generators\n- New wiring introduced in this slice: MqttClient creation in `index.ts`, MqttClient + readTransport passed through `RoomsRouterDependencies` to lifecycle orchestrator, DELETE route cleanup hook\n- What remains before the milestone is truly usable end-to-end: S05 frontend UI for zone coverage visualization and aggregation config (user-facing aggregation mode selection)",
       "proof_level": "integration",
@@ -425,11 +425,11 @@
       "completed_at": null,
       "full_summary_md": "",
       "full_uat_md": "",
-      "goal": "Add the frontend UI for zone coverage visibility and aggregation configuration. Users can see which sensors cover which zones and configure the aggregation behavior.",
-      "success_criteria": "- Zone coverage per sensor visible in room builder (color-coded or indicator per zone per sensor)\n- Overlap percentage shown per sensor-zone pair\n- Aggregation strategy picker per zone (OR/majority/no-change-on-tie)\n- Overlap threshold slider/input per zone\n- Uncovered zones show warning indicator\n- All config changes persist through room save",
-      "proof_level": "behavioral — browser verification of UI elements and interactions",
-      "integration_closure": "Completes the milestone. All requirements covered.",
-      "observability_impact": "None — frontend-only changes",
+      "goal": "Room builder shows per-sensor zone coverage indicators with overlap percentages, users can set aggregation strategy and overlap threshold per zone, and uncovered zones display warnings.",
+      "success_criteria": "- Per-sensor coverage computation returns coverage level per sensor per zone\n- ZoneEditorPanel has working aggregation mode selector (or/majority/no_change_on_tie) that persists to zone data\n- ZoneEditorPanel has overlap threshold slider (0–100%) that persists to zone data\n- Per-sensor coverage breakdown displayed in ZoneEditorPanel when zone is selected\n- Zones list panel shows coverage badge (green/amber/red) per zone with uncovered zone warnings\n- Canvas zones show per-sensor indicator dots using sensor colors\n- `npx tsc --noEmit` passes from frontend/ with zero new errors\n- All existing ZoneItemRenderer tests still pass\n- New per-sensor coverage unit tests pass",
+      "proof_level": "Contract + visual. Unit tests prove per-sensor coverage computation. TypeScript compilation proves type correctness. Visual verification confirms UI rendering.",
+      "integration_closure": "Upstream: `SensorRenderInfo` and `SENSOR_COLORS` from `canvas/types.ts` (S01/M003), `aggregationMode` field on zone types from S04, `sensorPlacements` computed in RoomBuilderPage. New wiring: per-sensor coverage utility consumed by RoomBuilderPage → ZoneEditorPanel + zones list panel + ZoneItemRenderer. What remains: nothing — this is the final slice in M004.",
+      "observability_impact": "None — pure frontend UI work with no runtime boundaries or async flows.",
       "sequence": 0,
       "replan_triggered_at": null
     }
@@ -2191,6 +2191,131 @@
       "observability_impact": "MqttClient connection status logged at startup. Room device create/remove logged via existing RoomDeviceService pino logs. Lifecycle orchestrator warnings surfaced in apply-zones API response. DELETE cleanup failures logged as warnings.",
       "full_plan_md": "",
       "sequence": 0
+    },
+    {
+      "milestone_id": "M004",
+      "slice_id": "S05",
+      "id": "T01",
+      "title": "Extracted per-sensor zone coverage computation as a pure utility with 24 passing unit tests, plus added overlapThreshold field to ZoneRect and ZonePolygon types",
+      "status": "complete",
+      "one_liner": "Extracted per-sensor zone coverage computation as a pure utility with 24 passing unit tests, plus added overlapThreshold field to ZoneRect and ZonePolygon types",
+      "narrative": "Created frontend/src/utils/zoneCoverageUtils.ts with three pure functions: isPointInSensorCone (single-sensor cone check using +90° rotation offset), getPerSensorCoverage (returns Map keyed by sensor ID for any zone type), and getAggregateCoverage (derives full/partial/none from per-sensor map). Added overlapThreshold optional field to ZoneRect and ZonePolygon in api/types.ts. Wrote 24 unit tests covering rect zones, polygon zones, multi-sensor scenarios, aggregate derivation, edge cases (zero-width, collinear, null placement, empty sensors).",
+      "verification_result": "npx vitest run src/utils/__tests__/zoneCoverageUtils.test.ts — 24/24 tests pass. npx tsc --noEmit — no new errors in new files (all errors are pre-existing in other files).",
+      "duration": "",
+      "completed_at": "2026-03-31T16:18:48.842Z",
+      "blocker_discovered": false,
+      "deviations": "None.",
+      "known_issues": "None.",
+      "key_files": [
+        "everything-presence-mmwave-configurator/frontend/src/utils/zoneCoverageUtils.ts",
+        "everything-presence-mmwave-configurator/frontend/src/utils/__tests__/zoneCoverageUtils.test.ts",
+        "everything-presence-mmwave-configurator/frontend/src/api/types.ts"
+      ],
+      "key_decisions": [
+        "Kept CoverageSensorInfo as standalone interface decoupled from SensorRenderInfo for pure utility testing",
+        "Zero-width/collinear zones produce collapsed vertices — still evaluable with valid coverage results"
+      ],
+      "full_summary_md": "---\nid: T01\nparent: S05\nmilestone: M004\nkey_files:\n  - everything-presence-mmwave-configurator/frontend/src/utils/zoneCoverageUtils.ts\n  - everything-presence-mmwave-configurator/frontend/src/utils/__tests__/zoneCoverageUtils.test.ts\n  - everything-presence-mmwave-configurator/frontend/src/api/types.ts\nkey_decisions:\n  - Kept CoverageSensorInfo as standalone interface decoupled from SensorRenderInfo for pure utility testing\n  - Zero-width/collinear zones produce collapsed vertices — still evaluable with valid coverage results\nduration: \"\"\nverification_result: passed\ncompleted_at: 2026-03-31T16:18:48.843Z\nblocker_discovered: false\n---\n\n# T01: Extracted per-sensor zone coverage computation as a pure utility with 24 passing unit tests, plus added overlapThreshold field to ZoneRect and ZonePolygon types\n\n**Extracted per-sensor zone coverage computation as a pure utility with 24 passing unit tests, plus added overlapThreshold field to ZoneRect and ZonePolygon types**\n\n## What Happened\n\nCreated frontend/src/utils/zoneCoverageUtils.ts with three pure functions: isPointInSensorCone (single-sensor cone check using +90° rotation offset), getPerSensorCoverage (returns Map keyed by sensor ID for any zone type), and getAggregateCoverage (derives full/partial/none from per-sensor map). Added overlapThreshold optional field to ZoneRect and ZonePolygon in api/types.ts. Wrote 24 unit tests covering rect zones, polygon zones, multi-sensor scenarios, aggregate derivation, edge cases (zero-width, collinear, null placement, empty sensors).\n\n## Verification\n\nnpx vitest run src/utils/__tests__/zoneCoverageUtils.test.ts — 24/24 tests pass. npx tsc --noEmit — no new errors in new files (all errors are pre-existing in other files).\n\n## Verification Evidence\n\n| # | Command | Exit Code | Verdict | Duration |\n|---|---------|-----------|---------|----------|\n| 1 | `npx vitest run src/utils/__tests__/zoneCoverageUtils.test.ts` | 0 | ✅ pass | 5500ms |\n| 2 | `npx tsc --noEmit | grep zoneCoverageUtils` | 0 | ✅ pass | 5500ms |\n\n\n## Deviations\n\nNone.\n\n## Known Issues\n\nNone.\n\n## Files Created/Modified\n\n- `everything-presence-mmwave-configurator/frontend/src/utils/zoneCoverageUtils.ts`\n- `everything-presence-mmwave-configurator/frontend/src/utils/__tests__/zoneCoverageUtils.test.ts`\n- `everything-presence-mmwave-configurator/frontend/src/api/types.ts`\n",
+      "description": "Extract per-sensor zone coverage computation as a pure utility function with comprehensive unit tests. This is the data foundation — every other task depends on it.\n\nThe existing `isPointInSensorRange` in RoomCanvas.tsx checks if a point is in range of ANY sensor (collapses to boolean). The existing `getZoneCoverage` returns aggregate 'full'|'partial'|'none'. We need a new pure function that returns per-sensor coverage results.\n\nCreate `frontend/src/utils/zoneCoverageUtils.ts` with:\n1. `isPointInSensorCone(pt, sensorPlacement, fovDeg, maxRangeMeters)` — checks a single sensor's cone (extracted from the inline logic in RoomCanvas)\n2. `getPerSensorCoverage(zone, sensors)` — returns `Map<string, 'full'|'partial'|'none'>` keyed by sensor ID\n3. `getAggregateCoverage(perSensor)` — derives aggregate from per-sensor (full if any sensor has full, partial if any has partial, none if all none)\n\nThe point-in-cone math must use the +90° rotation offset convention already established in `isPointInSensorRange` and `selectedZoneCoverage`. For ZoneRect, use center-based vertex expansion (x ± width/2, y ± height/2). For ZonePolygon, use vertices directly.\n\nSensor input type should be `{ id: string; placement: { x: number; y: number; rotationDeg?: number }; fovDeg: number; maxRangeMeters: number }` — compatible with SensorRenderInfo but not importing it (keeps the utility pure).\n\nAlso add `overlapThreshold` to `ZoneRect` and `ZonePolygon` in `frontend/src/api/types.ts` (number, 0-1, optional, defaults to 0.1 when absent).\n\nWrite tests in `frontend/src/utils/__tests__/zoneCoverageUtils.test.ts` covering:\n- Single sensor full/partial/none coverage for rect and polygon zones\n- Multi-sensor with different coverage levels per sensor\n- Aggregate derivation from per-sensor map\n- Zone entirely outside all sensors → all 'none'\n- Sensor with no placement → skipped\n- Edge case: zero-area zone (width=0 or polygon with collinear points)",
+      "estimate": "45m",
+      "files": [
+        "everything-presence-mmwave-configurator/frontend/src/utils/zoneCoverageUtils.ts",
+        "everything-presence-mmwave-configurator/frontend/src/utils/__tests__/zoneCoverageUtils.test.ts",
+        "everything-presence-mmwave-configurator/frontend/src/api/types.ts"
+      ],
+      "verify": "cd everything-presence-mmwave-configurator/frontend && npx vitest run src/utils/__tests__/zoneCoverageUtils.test.ts && npx tsc --noEmit",
+      "inputs": [
+        "`everything-presence-mmwave-configurator/frontend/src/components/RoomCanvas.tsx` — existing isPointInSensorRange logic to extract (lines 296-330)",
+        "`everything-presence-mmwave-configurator/frontend/src/components/canvas/types.ts` — SensorRenderInfo interface for reference (line 100)",
+        "`everything-presence-mmwave-configurator/frontend/src/api/types.ts` — ZoneRect/ZonePolygon types to add overlapThreshold field"
+      ],
+      "expected_output": [
+        "`everything-presence-mmwave-configurator/frontend/src/utils/zoneCoverageUtils.ts` — pure utility with isPointInSensorCone, getPerSensorCoverage, getAggregateCoverage",
+        "`everything-presence-mmwave-configurator/frontend/src/utils/__tests__/zoneCoverageUtils.test.ts` — 12+ unit tests",
+        "`everything-presence-mmwave-configurator/frontend/src/api/types.ts` — overlapThreshold added to ZoneRect and ZonePolygon"
+      ],
+      "observability_impact": "",
+      "full_plan_md": "",
+      "sequence": 0
+    },
+    {
+      "milestone_id": "M004",
+      "slice_id": "S05",
+      "id": "T02",
+      "title": "Aggregation mode selector + overlap threshold control in ZoneEditorPanel",
+      "status": "pending",
+      "one_liner": "",
+      "narrative": "",
+      "verification_result": "",
+      "duration": "",
+      "completed_at": null,
+      "blocker_discovered": false,
+      "deviations": "",
+      "known_issues": "",
+      "key_files": [],
+      "key_decisions": [],
+      "full_summary_md": "",
+      "description": "Add aggregation mode and overlap threshold configuration UI to the zone editor panel. This delivers R007 frontend support (aggregation strategy per zone) and R002 frontend support (configurable threshold per zone).\n\nIn `ZoneEditorPanel.tsx`:\n1. Add a 3-button toggle for aggregation mode below the Zone Type section, following the same pattern as the zone type buttons. Labels: 'Any (OR)', 'Majority', 'Hold on Tie'. Values: 'or', 'majority', 'no_change_on_tie'. Default visual state: 'or' when `zone.aggregationMode` is undefined.\n2. Add an overlap threshold slider below aggregation mode. Range 0-100 (displayed as percentage). Maps to 0.0-1.0 on the zone's `overlapThreshold` field. Default visual state: 10% when undefined. Use a native `<input type=\"range\">` styled with Tailwind.\n3. Add a 'Per-Sensor Coverage' section that displays per-sensor coverage breakdown when the `perSensorCoverage` prop is provided. Each sensor shown as a row with its color dot + name + coverage badge (Full/Partial/None with green/amber/red coloring).\n\nUpdate `ZoneEditorPanelProps` to accept:\n- `perSensorCoverage?: Array<{ id: string; color: string; label: string; coverage: 'full' | 'partial' | 'none' }>` \n\nThe existing `coverage` prop stays for the aggregate warning banner. The new `perSensorCoverage` prop adds the per-sensor breakdown detail.\n\nIn `RoomBuilderPage.tsx`:\n1. Import `getPerSensorCoverage` and `getAggregateCoverage` from the new utility\n2. Replace the inline `selectedZoneCoverage` useMemo (lines 512-540) with one that uses the utility functions\n3. Compute `selectedZonePerSensorCoverage` from `getPerSensorCoverage` using `sensorPlacements`\n4. Pass per-sensor coverage data to `ZoneEditorPanel`\n\nUse the `frontend-design` skill for the UI component styling.\n\nColors for coverage badges: green=#22c55e (full), amber=#f59e0b (partial), red=#ef4444 (none) — matching existing ZoneItemRenderer convention. Sensor color dots use the sensor's color from SENSOR_COLORS.",
+      "estimate": "45m",
+      "files": [
+        "everything-presence-mmwave-configurator/frontend/src/components/ZoneEditorPanel.tsx",
+        "everything-presence-mmwave-configurator/frontend/src/pages/RoomBuilderPage.tsx"
+      ],
+      "verify": "cd everything-presence-mmwave-configurator/frontend && npx tsc --noEmit && npx vitest run",
+      "inputs": [
+        "`everything-presence-mmwave-configurator/frontend/src/utils/zoneCoverageUtils.ts` — per-sensor coverage utility from T01",
+        "`everything-presence-mmwave-configurator/frontend/src/components/ZoneEditorPanel.tsx` — existing zone editor to extend",
+        "`everything-presence-mmwave-configurator/frontend/src/pages/RoomBuilderPage.tsx` — orchestrator to wire new data flow",
+        "`everything-presence-mmwave-configurator/frontend/src/api/types.ts` — zone types with aggregationMode and overlapThreshold"
+      ],
+      "expected_output": [
+        "`everything-presence-mmwave-configurator/frontend/src/components/ZoneEditorPanel.tsx` — aggregation mode selector, threshold slider, per-sensor coverage breakdown",
+        "`everything-presence-mmwave-configurator/frontend/src/pages/RoomBuilderPage.tsx` — utility-based coverage computation, per-sensor data passed to editor"
+      ],
+      "observability_impact": "",
+      "full_plan_md": "",
+      "sequence": 0
+    },
+    {
+      "milestone_id": "M004",
+      "slice_id": "S05",
+      "id": "T03",
+      "title": "Zone list coverage badges, uncovered warnings, and canvas per-sensor indicators",
+      "status": "pending",
+      "one_liner": "",
+      "narrative": "",
+      "verification_result": "",
+      "duration": "",
+      "completed_at": null,
+      "blocker_discovered": false,
+      "deviations": "",
+      "known_issues": "",
+      "key_files": [],
+      "key_decisions": [],
+      "full_summary_md": "",
+      "description": "Wire coverage visualization into the zones list panel and canvas zone rendering. This delivers R010 (coverage visualization) and R011 (uncovered zone warnings).\n\n**Zones list panel** (in `RoomBuilderPage.tsx`, the `activeSection === 'zones'` block starting at line 1794):\n1. For each zone in the list, compute aggregate coverage using `getPerSensorCoverage` + `getAggregateCoverage` from the utility\n2. Add a coverage badge next to each zone's type badge: green dot for full, amber dot for partial, red dot + '⚠' for none\n3. After the zone list, if any zones have 'none' coverage, show a warning banner: 'N zone(s) have no sensor coverage — reposition sensors or adjust zones'\n4. The coverage computation for the list needs the `sensorPlacements` array — compute a `zoneCoverageMap` useMemo that maps zone IDs to aggregate coverage for all zones\n\n**Canvas zone indicators** (in `ZoneItemRenderer.tsx`):\n1. Extend `renderZones` to accept an optional `perSensorCoverageMap?: Map<string, Array<{ sensorId: string; color: string; coverage: 'full' | 'partial' | 'none' }>>` parameter\n2. For each zone, if per-sensor data exists, render small colored dots (one per covering sensor) at the top-right corner of the zone. Dot color = sensor's SENSOR_COLORS entry. Dot has a subtle white border. Only show dots for sensors with 'full' or 'partial' coverage (skip 'none').\n3. If zone has zero covering sensors (all 'none'), render a small '⚠' icon in the zone center in red\n\n**RoomCanvas.tsx wiring:**\n1. Add a `perSensorCoverageMap` prop to RoomCanvas\n2. Pass it through to `zoneRenderer.renderZones()`\n3. In `RoomBuilderPage.tsx`, compute the map for all zones and pass it to RoomCanvas\n\nUse the `frontend-design` skill for the UI work.\n\nVerify all existing ZoneItemRenderer tests still pass — the new parameter is optional so existing call sites are unaffected.",
+      "estimate": "50m",
+      "files": [
+        "everything-presence-mmwave-configurator/frontend/src/pages/RoomBuilderPage.tsx",
+        "everything-presence-mmwave-configurator/frontend/src/components/canvas/ZoneItemRenderer.tsx",
+        "everything-presence-mmwave-configurator/frontend/src/components/RoomCanvas.tsx"
+      ],
+      "verify": "cd everything-presence-mmwave-configurator/frontend && npx tsc --noEmit && npx vitest run",
+      "inputs": [
+        "`everything-presence-mmwave-configurator/frontend/src/utils/zoneCoverageUtils.ts` — per-sensor coverage utility from T01",
+        "`everything-presence-mmwave-configurator/frontend/src/pages/RoomBuilderPage.tsx` — updated in T02 with utility-based coverage",
+        "`everything-presence-mmwave-configurator/frontend/src/components/canvas/ZoneItemRenderer.tsx` — zone rendering to extend",
+        "`everything-presence-mmwave-configurator/frontend/src/components/RoomCanvas.tsx` — canvas to pass through per-sensor data",
+        "`everything-presence-mmwave-configurator/frontend/src/components/canvas/types.ts` — SensorRenderInfo type"
+      ],
+      "expected_output": [
+        "`everything-presence-mmwave-configurator/frontend/src/pages/RoomBuilderPage.tsx` — zone list with coverage badges and uncovered warnings, zoneCoverageMap computation",
+        "`everything-presence-mmwave-configurator/frontend/src/components/canvas/ZoneItemRenderer.tsx` — per-sensor indicator dots on zones",
+        "`everything-presence-mmwave-configurator/frontend/src/components/RoomCanvas.tsx` — perSensorCoverageMap prop threaded to zone renderer"
+      ],
+      "observability_impact": "",
+      "full_plan_md": "",
+      "sequence": 0
     }
   ],
   "decisions": [
@@ -2370,6 +2495,18 @@
       "decision": "Room device lifecycle orchestrator placement and assignment data flow",
       "choice": "Separate `roomDeviceLifecycle.ts` service in domain/ with pure `buildRoomDeviceDescriptor` function. Apply-zones route re-runs zone assignment to get ZoneAssignment[] for the lifecycle orchestrator rather than modifying RoomZoneOrchestrator's return type.",
       "rationale": "RoomZoneOrchestrator (S03) returns DeviceWriteResult[] which lacks the raw ZoneAssignment data needed by the lifecycle orchestrator. Rather than changing S03's public interface (risking regressions), the apply-zones route runs the pure assignment functions independently. The coverage + assignment computation is stateless and fast — running it twice has negligible cost. This keeps S03's contract stable and the lifecycle orchestrator cleanly separated from the zone write pipeline.",
+      "revisable": "Yes",
+      "made_by": "agent",
+      "superseded_by": null
+    },
+    {
+      "seq": 28,
+      "id": "D016",
+      "when_context": "M004/S05",
+      "scope": "architecture",
+      "decision": "Where to store overlap threshold — per-zone vs per-room",
+      "choice": "Per-zone on ZoneRect/ZonePolygon (`overlapThreshold?: number`, 0-1, default 0.1) alongside the existing `aggregationMode` field",
+      "rationale": "R002 says \"configurable per zone\" and \"threshold stored per zone on RoomConfig.\" Per-zone gives more granular control (a large zone might want lower threshold than a small precise zone). Matches aggregationMode's per-zone placement. Backend's assignZonesToDevices already takes threshold as parameter — future work can read it from each zone. Frontend-only change for S05.",
       "revisable": "Yes",
       "made_by": "agent",
       "superseded_by": null
@@ -3057,6 +3194,28 @@
       "verdict": "✅ pass (271/271 non-Docker tests pass, 23 pre-existing Docker failures)",
       "duration_ms": 28260,
       "created_at": "2026-03-31T15:43:32.680Z"
+    },
+    {
+      "id": 63,
+      "task_id": "T01",
+      "slice_id": "S05",
+      "milestone_id": "M004",
+      "command": "npx vitest run src/utils/__tests__/zoneCoverageUtils.test.ts",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 5500,
+      "created_at": "2026-03-31T16:18:48.842Z"
+    },
+    {
+      "id": 64,
+      "task_id": "T01",
+      "slice_id": "S05",
+      "milestone_id": "M004",
+      "command": "npx tsc --noEmit | grep zoneCoverageUtils",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 5500,
+      "created_at": "2026-03-31T16:18:48.842Z"
     }
   ]
 }

@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "taskId": "T03",
+  "unitId": "M004/S04/T03",
+  "timestamp": 1774971828294,
+  "passed": false,
+  "discoverySource": "task-plan",
+  "checks": [
+    {
+      "command": "cd everything-presence-mmwave-configurator/backend",
+      "exitCode": 0,
+      "durationMs": 4,
+      "verdict": "pass"
+    },
+    {
+      "command": "npx tsc --noEmit",
+      "exitCode": 1,
+      "durationMs": 1218,
+      "verdict": "fail"
+    },
+    {
+      "command": "cd ..",
+      "exitCode": 0,
+      "durationMs": 6,
+      "verdict": "pass"
+    },
+    {
+      "command": "npx vitest run",
+      "exitCode": 1,
+      "durationMs": 29155,
+      "verdict": "fail"
+    }
+  ],
+  "retryAttempt": 1,
+  "maxRetries": 2
+}
