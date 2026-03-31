@@ -54,6 +54,9 @@ See `.gsd/REQUIREMENTS.md` for the explicit capability contract, requirement sta
 - [x] M002: RoomCanvas Generic Item System — Extract renderers, unify drag state machine, reduce RoomCanvas complexity
 - [x] M003: Multi-Device Room Support — Backend sensors[] model, frontend multi-sensor rendering, device management UI
 - [ ] M004: Room-Level Zone System with HA Integration — Coordinate transform, zone-to-sensor assignment, virtual HA room device, template sensor aggregation
+  - S01 ✅ Coordinate transform + zone coverage engine (89 unit tests)
+  - S02 ✅ HA room device + template sensor creation proof
+  - S03 ✅ Zone assignment + per-device translated zone writes (22 unit tests, REST endpoint, frontend auto-apply)
 
 ## Known Issues
 

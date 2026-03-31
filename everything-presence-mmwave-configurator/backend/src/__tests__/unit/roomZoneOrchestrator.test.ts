@@ -13,8 +13,8 @@ import type {
 // Module mock: replace the deviceEntityService singleton
 // ─────────────────────────────────────────────────────────────────
 
-const mockGetZoneEntitySet = vi.fn<[string, 'regular' | 'exclusion' | 'entry', number], ZoneEntitySet | null>();
-const mockGetPolygonZoneEntity = vi.fn<[string, 'polygon' | 'polygonExclusion' | 'polygonEntry', number], string | null>();
+const mockGetZoneEntitySet = vi.fn<(deviceId: string, slotType: 'regular' | 'exclusion' | 'entry', slotIndex: number) => ZoneEntitySet | null>();
+const mockGetPolygonZoneEntity = vi.fn<(deviceId: string, slotType: 'polygon' | 'polygonExclusion' | 'polygonEntry', slotIndex: number) => string | null>();
 
 vi.mock('../../domain/deviceEntityService', () => ({
   deviceEntityService: {

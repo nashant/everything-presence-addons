@@ -1,3 +1,5 @@
+import type { AggregationMode } from '../ha/templateGenerator';
+
 export interface ZoneRect {
   id: string;
   type: 'regular' | 'exclusion' | 'entry';
@@ -7,6 +9,7 @@ export interface ZoneRect {
   height: number;
   enabled?: boolean; // Whether this zone slot is active/configured
   label?: string; // Custom display label (e.g., "Bed", "Chair")
+  aggregationMode?: AggregationMode; // Aggregation strategy for multi-sensor rooms
 }
 
 export interface Point {
@@ -20,6 +23,7 @@ export interface ZonePolygon {
   vertices: Point[]; // At least 3 vertices for a valid polygon
   enabled?: boolean;
   label?: string;
+  aggregationMode?: AggregationMode; // Aggregation strategy for multi-sensor rooms
 }
 
 // Union type for both zone shapes

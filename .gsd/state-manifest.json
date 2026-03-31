@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "exported_at": "2026-03-31T14:22:12.408Z",
+  "exported_at": "2026-03-31T15:29:25.169Z",
   "milestones": [
     {
       "id": "M001",
@@ -369,16 +369,16 @@
       "milestone_id": "M004",
       "id": "S03",
       "title": "Zone assignment + per-device translated zone writes",
-      "status": "pending",
+      "status": "complete",
       "risk": "medium",
       "depends": [
         "S01"
       ],
       "demo": "Room save triggers zone-to-sensor assignment, translates coordinates per sensor, and writes device-relative zones via zoneWriter. Correct coordinates verified in HA entity states.",
       "created_at": "2026-03-31T07:04:23.285Z",
-      "completed_at": null,
-      "full_summary_md": "",
-      "full_uat_md": "",
+      "completed_at": "2026-03-31T14:29:00.672Z",
+      "full_summary_md": "---\nid: S03\nparent: M004\nmilestone: M004\nprovides:\n  - POST /api/rooms/:roomId/apply-zones endpoint for triggering zone writes\n  - RoomZoneOrchestrator service for full room → device zone pipeline\n  - ZoneWriter.applyTranslatedZones() for multi-sensor slot-indexed writes\n  - Frontend applyRoomZones() API function\n  - handleSaveRoom auto-applies zones after successful room PUT\nrequires:\n  - slice: S01\n    provides: coordinateTransform (transformZoneToDeviceSpace), zoneCoverage (computeAllCoverage), zoneAssignment (assignZonesToDevices)\naffects:\n  - S04\n  - S05\nkey_files:\n  - everything-presence-mmwave-configurator/backend/src/domain/roomZoneOrchestrator.ts\n  - everything-presence-mmwave-configurator/backend/src/ha/zoneWriter.ts\n  - everything-presence-mmwave-configurator/backend/src/__tests__/unit/roomZoneOrchestrator.test.ts\n  - everything-presence-mmwave-configurator/backend/src/routes/rooms.ts\n  - everything-presence-mmwave-configurator/backend/src/server.ts\n  - everything-presence-mmwave-configurator/frontend/src/api/zones.ts\n  - everything-presence-mmwave-configurator/frontend/src/pages/RoomBuilderPage.tsx\nkey_decisions:\n  - D013: New applyTranslatedZones() method with explicit slot indices instead of modifying existing ID-based methods\n  - D014: Rooms router accepts optional deps — CRUD works without HA, apply-zones returns 503\n  - D015: Zone write failure in handleSaveRoom is non-fatal — room data persists\npatterns_established:\n  - RoomZoneOrchestrator chains coverage → assignment → transform → write with all deps injected for testability\n  - Optional router dependencies pattern: route factories accept deps, HA-dependent routes return 503 when unavailable\n  - Vitest 3.x vi.fn<> uses function-signature generics: vi.fn<(arg: Type) => Return>()\nobservability_surfaces:\n  - RoomZoneOrchestrator structured return: results[] (per-device write status), unassigned[] (zones no sensor covers), warnings[] (skipped sensors, overflow)\n  - Per-device ZoneWriteResult.failures[] with entityId and error message\n  - Pino structured logs: zone write counts, skipped sensors, unassigned zones per orchestration run\ndrill_down_paths:\n  - .gsd/milestones/M004/slices/S03/tasks/T01-SUMMARY.md\n  - .gsd/milestones/M004/slices/S03/tasks/T02-SUMMARY.md\nduration: \"\"\nverification_result: passed\ncompleted_at: 2026-03-31T14:29:00.672Z\nblocker_discovered: false\n---\n\n# S03: Zone assignment + per-device translated zone writes\n\n**Built the full pipeline from room save → zone-to-sensor assignment → coordinate transform → per-device zone writes via ZoneWriter, with 22 unit tests proving correctness and a new REST endpoint + frontend integration for automatic zone application.**\n\n## What Happened\n\nS03 connects the S01 coordinate transform and coverage engine to the actual zone write infrastructure, closing the loop from room-level zone drawing to device-level hardware configuration.\n\n**T01 (ZoneWriter.applyTranslatedZones + RoomZoneOrchestrator):** Added `applyTranslatedZones()` to ZoneWriter — a new method that accepts DeviceZoneRect/DeviceZonePolygon with explicit slot indices (bypassing the existing ID-based matching which doesn't work for multi-sensor assignment). The method writes beginX/endX/beginY/endY directly for rects and polygonToText() for polygons, then clears unused slots based on profile limits. Built `RoomZoneOrchestrator` service that chains the full pipeline: profile resolution → computeAllCoverage → assignZonesToDevices → transformZoneToDeviceSpace → applyTranslatedZones per device. All dependencies are injected for testability. 22 unit tests cover rect writes, polygon writes, unused slot clearing, multi-sensor assignment, missing mappings (warning not crash), EP One exclusion, below-threshold zones appearing in unassigned, write failures captured in results, mixed rect+polygon zones, device-space coordinate verification, and slot capacity overflow. Existing applyZones()/applyPolygonZones() methods remain unchanged.\n\n**T02 (REST route + frontend integration):** Added `POST /api/rooms/:roomId/apply-zones` route to rooms router. The `createRoomsRouter` factory now accepts optional `RoomsRouterDependencies` (writeClient + profileLoader) — basic room CRUD works without HA, while apply-zones returns 503 when deps are unavailable. Added `applyRoomZones(roomId)` to frontend `api/zones.ts` with typed result interfaces. Updated `handleSaveRoom` in RoomBuilderPage to call apply-zones after successful room PUT when the room has both sensors and zones. Zone write failure is non-fatal — room data always persists, zone errors are logged for S05's warning UI.\n\n**Type fix during slice completion:** Fixed `vi.fn<Args, Return>()` generic syntax in roomZoneOrchestrator.test.ts — Vitest 3.x changed to function-signature generics `vi.fn<(args) => return>()`.\n\n## Verification\n\n- Backend tsc: 0 new errors from S03-touched files (3 pre-existing errors in mockReadTransport.ts/testApp.ts from missing `call` method — not S03)\n- Frontend tsc: 0 new errors from S03-touched files (zones.ts clean, RoomBuilderPage errors all pre-existing at lines unrelated to S03 changes)\n- roomZoneOrchestrator.test.ts: 22/22 tests pass\n- S01 regression tests: 89/89 pass (coordinateTransform + zoneCoverage + zoneAssignment)\n- Full test suite: 246/246 unit tests pass, 23 pre-existing Docker-dependent integration test failures (K007)\n\n## Requirements Advanced\n\n- R004 — Per-device zone writes with translated coordinates fully implemented — RoomZoneOrchestrator chains coverage→assignment→transform→write, ZoneWriter.applyTranslatedZones writes device-space beginX/endX/beginY/endY for rects and polygonToText for polygons, 22 unit tests verify correctness\n- R012 — EP One exclusion enforced — orchestrator resolves profiles and skips sensors with maxZones=0, verified in unit test 'EP One + EP Lite: zones only assigned to Lite, One excluded'\n\n## Requirements Validated\n\n- R004 — 22 unit tests in roomZoneOrchestrator.test.ts verify: rect zones write correct beginX/endX/beginY/endY (device-space transformed), polygon zones write via polygonToText(), unused slots cleared, multi-sensor assignment fans out correctly, write failures captured not thrown\n- R012 — Unit test 'EP One + EP Lite: zones only assigned to Lite, One excluded' — EP One with maxZones=0 receives no assignments, Lite gets all zones\n\n## New Requirements Surfaced\n\nNone.\n\n## Requirements Invalidated or Re-scoped\n\nNone.\n\n## Deviations\n\nFixed vi.fn<> generic syntax during slice completion — Vitest 3.x uses function-signature generics instead of positional type args. This was a type-only fix (no runtime change).\n\n## Known Limitations\n\n- Apply-zones endpoint has no dedicated integration test (requires running HA + device entities). Unit tests cover the orchestrator pipeline fully via mocks.\n- Frontend zone write errors are console-logged only — S05 will add UI for warnings and unassigned zones.\n- Zone writes happen synchronously per device (sequential, not parallel) to avoid HA rate limiting.\n\n## Follow-ups\n\n- S04 will wire room device lifecycle (create/update/cleanup virtual HA device) and aggregation config on top of S03's zone write pipeline.\n- S05 will add coverage visualization UI and surface the warnings/unassigned arrays from the apply-zones result to users.\n\n## Files Created/Modified\n\n- `everything-presence-mmwave-configurator/backend/src/domain/roomZoneOrchestrator.ts` — New file: RoomZoneOrchestrator service orchestrating coverage→assignment→transform→write pipeline with injected deps\n- `everything-presence-mmwave-configurator/backend/src/ha/zoneWriter.ts` — Added applyTranslatedZones() method for multi-sensor slot-indexed writes with rect/polygon support and unused slot clearing\n- `everything-presence-mmwave-configurator/backend/src/__tests__/unit/roomZoneOrchestrator.test.ts` — 22 unit tests covering full orchestrator pipeline, ZoneWriter.applyTranslatedZones, and edge cases (fixed vi.fn generic syntax for Vitest 3.x)\n- `everything-presence-mmwave-configurator/backend/src/routes/rooms.ts` — Added POST /:roomId/apply-zones route with optional dependency injection\n- `everything-presence-mmwave-configurator/backend/src/server.ts` — Passes writeClient + profileLoader deps to createRoomsRouter when HA available\n- `everything-presence-mmwave-configurator/frontend/src/api/zones.ts` — Added applyRoomZones(roomId) function with typed ApplyZonesResult interface\n- `everything-presence-mmwave-configurator/frontend/src/pages/RoomBuilderPage.tsx` — handleSaveRoom calls applyRoomZones after successful PUT when room has sensors and zones\n",
+      "full_uat_md": "# S03: Zone assignment + per-device translated zone writes — UAT\n\n**Milestone:** M004\n**Written:** 2026-03-31T14:29:00.672Z\n\n## UAT: S03 — Zone assignment + per-device translated zone writes\n\n### Preconditions\n- Backend running with `npm run dev` inside Docker container\n- Frontend accessible at localhost:42069\n- At least one room with walls drawn, 2+ sensors attached (e.g., EP Lite devices), and 1+ zones drawn\n- HA instance running with device entities discovered for attached sensors\n\n### Test Case 1: Room save triggers zone writes (happy path)\n1. Open Room Builder for a room with walls, 2 EP Lite sensors, and 3 zones\n2. Click Save\n3. **Expected:** Room saves successfully (success modal or confirmation)\n4. Open browser console — check for zone apply result log\n5. **Expected:** Console shows `applyRoomZones` result with `ok: true`, `results` array with entries for each sensor, `unassigned: []`\n6. In HA, navigate to each sensor's zone entities (e.g., `number.lite1_zone1_begin_x`)\n7. **Expected:** Zone coordinates are in device-space (transformed from room origin to sensor origin + rotation), not raw room-space values\n\n### Test Case 2: Room with no sensors — no zone writes attempted\n1. Open Room Builder for a room with walls and zones but NO sensors\n2. Click Save\n3. **Expected:** Room saves successfully, no errors\n4. **Expected:** No `apply-zones` API call made (check Network tab — should only show room PUT, not POST apply-zones)\n\n### Test Case 3: Room with no zones — no zone writes attempted\n1. Open Room Builder for a room with walls and sensors but NO zones\n2. Click Save\n3. **Expected:** Room saves successfully, no errors\n4. **Expected:** No `apply-zones` API call made\n\n### Test Case 4: EP One sensor excluded from zone assignment\n1. Create a room with 1 EP One sensor and 1 EP Lite sensor, plus 2 zones\n2. Save the room\n3. **Expected:** Only EP Lite receives zone writes. EP One (maxZones=0) receives no writes.\n4. In HA: EP Lite zone entities updated with coordinates. EP One zone entities unchanged.\n\n### Test Case 5: Zone below coverage threshold appears as unassigned\n1. Create a room with a single sensor and a zone placed entirely outside the sensor's FOV\n2. Save the room\n3. **Expected:** Console log shows `unassigned` array containing the out-of-coverage zone with reason\n4. **Expected:** No zone write attempted for the uncovered zone\n\n### Test Case 6: HA unavailable — zone write fails gracefully\n1. Stop the HA container (`docker stop homeassistant`)\n2. Save a room with sensors and zones\n3. **Expected:** Room data persists (room PUT succeeds)\n4. **Expected:** Apply-zones returns 503 or write errors — room save still shows success\n5. **Expected:** Console logs the zone write failure\n6. Restart HA (`docker start homeassistant`)\n\n### Test Case 7: Missing room — apply-zones returns 404\n1. Send `POST /api/rooms/nonexistent-id/apply-zones` via curl or API tool\n2. **Expected:** 404 response with appropriate error message\n\n### Test Case 8: Polygon zones write correctly\n1. Create a room with a polygon zone (not rectangular)\n2. Attach an EP Pro sensor (supports polygon zones)\n3. Save the room\n4. **Expected:** Polygon zone written via polygonToText() format to the sensor's polygon entity\n5. **Expected:** Device-space transformed vertices (rotated + translated to sensor origin)\n\n### Test Case 9: Multiple sensors covering same zone\n1. Create a room with 2 EP Lite sensors whose FOVs overlap on a single zone\n2. Save the room\n3. **Expected:** Both sensors receive the zone in their respective slot assignments\n4. **Expected:** Each sensor gets device-space coordinates relative to its own position/rotation (different values per sensor)\n\n### Edge Cases\n- Room with maximum zones (4 regular + 2 exclusion + 2 entry for EP Lite) — all slots written, verify coordinates\n- Sensor with entity resolution failure (entity not discovered) — warning in result, other zones still written\n- Rapid re-saves — each save overwrites previous zone writes cleanly\n",
       "goal": "Room save triggers zone-to-sensor assignment, translates coordinates per sensor, and writes device-relative zones via zoneWriter. Correct coordinates verified through unit tests with mocked HA writes.",
       "success_criteria": "- `applyTranslatedZones()` on ZoneWriter accepts DeviceZoneRect/DeviceZonePolygon with explicit slot targeting and writes to correct HA entities\n- `RoomZoneOrchestrator` chains profile resolution → coverage → assignment → transform → per-device writes\n- Unused device zone slots are cleared (set to 0) when a device has fewer assigned zones than its profile max\n- Sensors without entity mappings produce warnings, not failures\n- EP One devices (all-zero caps) excluded from assignment per R012\n- `POST /api/rooms/:roomId/apply-zones` endpoint returns structured result with per-device status and unassigned zone warnings\n- Frontend `handleSaveRoom` calls apply-zones after PUT when room has sensors and zones\n- All existing S01 tests (89) pass without regression\n- New orchestrator unit tests pass (≥15 tests covering rect/polygon transforms, slot assignment, unused slot clearing, missing mapping warnings, EP One exclusion)",
       "proof_level": "Contract — unit tests with mocked writeClient/deviceEntityService prove correct transform+assignment+write pipeline. Real HA runtime not required for this slice.",
@@ -402,11 +402,11 @@
       "completed_at": null,
       "full_summary_md": "",
       "full_uat_md": "",
-      "goal": "Wire S02's HA integration + S03's zone assignments into the complete room device lifecycle. Generate Jinja2 templates from zone assignment metadata with configurable aggregation.",
-      "success_criteria": "- Room save creates virtual HA device + template sensors from zone assignments\n- Aggregation strategy stored per zone on RoomConfig\n- Template Jinja2 correctly implements OR, majority, and no-change-on-tie strategies\n- Target count template uses max across covering sensors\n- Zone re-save updates existing templates\n- Room delete removes HA device + all template sensors\n- Uncovered zones create unavailable entities in HA",
-      "proof_level": "integration — full pipeline verified in Docker dev stack",
-      "integration_closure": "Complete backend pipeline. S05 adds frontend UI on top.",
-      "observability_impact": "Room device lifecycle events logged. Template sensor create/update/delete logged.",
+      "goal": "Full room device lifecycle: zone save creates/updates virtual HA room device with template binary sensors using correct aggregation modes. Room delete cleans up HA entities. Aggregation strategy configurable per zone (OR/majority/no-change-on-tie). Target count uses max across covering sensors.",
+      "success_criteria": "## Must-Haves\n\n- `aggregationMode` field on Zone types (backend + frontend) with `'or'` default, preserved through parseZone normalization\n- Room device lifecycle orchestrator that transforms zone assignment results + entity ID lookups into a `RoomDeviceDescriptor` and calls `RoomDeviceService.createRoomDevice()`\n- Entity ID resolution: slotId → entity keys (`zone{N}Occupancy`, `zone{N}TargetCount`) → `deviceEntityService.getEntityId()` → covering sensor entity arrays grouped by room zone\n- MqttClient instantiated and connected at server startup when `config.mqtt` is present; no-crash when absent\n- Apply-zones route (`POST /:roomId/apply-zones`) triggers room device creation after zone writes succeed\n- Room DELETE route triggers `RoomDeviceService.removeRoomDevice()` cleanup before storage deletion\n- Update semantics: re-publishing all discovery payloads on every save effectively updates the room device; removed zones cleared by publishing empties for old zone count\n- Missing entity mappings handled gracefully (skip sensor, log warning) — never throw\n- EP One (maxZones=0) excluded from entity resolution — no lookups attempted\n- Unit tests verify correct RoomDeviceDescriptor construction from zone assignments\n\n## Threat Surface\n\n- **Abuse**: MQTT publish with user-controlled room names — `sanitizeForMqtt` already handles injection. Zone count bounded by device profile limits. No direct user access to MQTT topics.\n- **Data exposure**: None — no secrets in MQTT payloads, entity IDs are HA-internal identifiers\n- **Input trust**: Zone `aggregationMode` from user input — validated to enum values, defaults to `'or'` for invalid/missing values\n\n## Requirement Impact\n\n- **Requirements touched**: R005, R006, R007, R008, R009\n- **Re-verify**: S02 unit tests (roomDeviceService, templateGenerator, discoveryPayload), S03 unit tests (roomZoneOrchestrator)\n- **Decisions revisited**: D012 (entity_id from object_id — S04 must use same convention), D013 (applyTranslatedZones method — S04 extends the orchestration chain)\n\n## Proof Level\n\n- This slice proves: integration (S02 device creation + S03 zone assignment wired together through lifecycle orchestrator)\n- Real runtime required: no (unit tests with mocked MQTT/entity services; Docker integration test deferred to S05)\n- Human/UAT required: no\n\n## Verification\n\n- `cd everything-presence-mmwave-configurator && npx vitest run backend/src/__tests__/unit/roomDeviceLifecycle.test.ts` — new test file for lifecycle orchestrator, ≥12 tests passing\n- `cd everything-presence-mmwave-configurator && npx vitest run` — full suite: ≥246 tests passing (no regressions)\n- `cd everything-presence-mmwave-configurator/backend && npx tsc --noEmit` — 0 new type errors from S04 files\n- `cd everything-presence-mmwave-configurator/frontend && npx tsc --noEmit` — 0 new type errors from S04 files\n\n## Observability / Diagnostics\n\n- Runtime signals: Pino structured logs for room device lifecycle (create/update/remove) with roomId, zoneCount, entity resolution failures\n- Inspection surfaces: `RoomDeviceService.getDiscoveryTopics()` returns all MQTT topics for a room — usable for broker debugging\n- Failure visibility: Entity resolution warnings in orchestrator result (missing mappings, skipped sensors), MQTT connection state via `mqttClient.isConnected`\n- Redaction constraints: none — no secrets in entity IDs or MQTT topics\n\n## Integration Closure\n\n- Upstream surfaces consumed: `RoomDeviceService` + `RoomDeviceDescriptor` (S02), `RoomZoneOrchestrator` + `ZoneAssignment` (S03), `deviceEntityService.getEntityId()`, `MqttClient`, template generators\n- New wiring introduced in this slice: MqttClient creation in `index.ts`, MqttClient + readTransport passed through `RoomsRouterDependencies` to lifecycle orchestrator, DELETE route cleanup hook\n- What remains before the milestone is truly usable end-to-end: S05 frontend UI for zone coverage visualization and aggregation config (user-facing aggregation mode selection)",
+      "proof_level": "integration",
+      "integration_closure": "Upstream: RoomDeviceService (S02), RoomZoneOrchestrator (S03), deviceEntityService, MqttClient, templateGenerator. New wiring: MqttClient in index.ts, lifecycle orchestrator in apply-zones route, cleanup in DELETE route. Remaining: S05 frontend UI.",
+      "observability_impact": "Pino structured logs for room device create/update/remove. Entity resolution warnings surfaced in orchestrator results. MQTT connection state observable via mqttClient.isConnected.",
       "sequence": 0,
       "replan_triggered_at": null
     },
@@ -2046,6 +2046,137 @@
       "observability_impact": "",
       "full_plan_md": "",
       "sequence": 0
+    },
+    {
+      "milestone_id": "M004",
+      "slice_id": "S04",
+      "id": "T01",
+      "title": "Added aggregationMode field to ZoneRect/ZonePolygon in backend and frontend types, with whitelist validation in parseZone",
+      "status": "complete",
+      "one_liner": "Added aggregationMode field to ZoneRect/ZonePolygon in backend and frontend types, with whitelist validation in parseZone",
+      "narrative": "Added `aggregationMode?: AggregationMode` to both ZoneRect and ZonePolygon interfaces in backend domain types (importing from templateGenerator). Added the equivalent literal union type to frontend types (self-contained). Updated parseZone in the rooms router to validate against the three known aggregation modes and conditionally include it on returned zone objects. Invalid/missing values are omitted cleanly.",
+      "verification_result": "Ran tsc --noEmit on both backend and frontend. All errors are pre-existing — zero new errors introduced by the S04 type and parsing changes.",
+      "duration": "",
+      "completed_at": "2026-03-31T15:29:25.156Z",
+      "blocker_discovered": false,
+      "deviations": "None.",
+      "known_issues": "None.",
+      "key_files": [
+        "everything-presence-mmwave-configurator/backend/src/domain/types.ts",
+        "everything-presence-mmwave-configurator/frontend/src/api/types.ts",
+        "everything-presence-mmwave-configurator/backend/src/routes/rooms.ts"
+      ],
+      "key_decisions": [
+        "Use spread with conditional include pattern for aggregationMode in parseZone to omit undefined values from stored zone objects"
+      ],
+      "full_summary_md": "---\nid: T01\nparent: S04\nmilestone: M004\nkey_files:\n  - everything-presence-mmwave-configurator/backend/src/domain/types.ts\n  - everything-presence-mmwave-configurator/frontend/src/api/types.ts\n  - everything-presence-mmwave-configurator/backend/src/routes/rooms.ts\nkey_decisions:\n  - Use spread with conditional include pattern for aggregationMode in parseZone to omit undefined values from stored zone objects\nduration: \"\"\nverification_result: passed\ncompleted_at: 2026-03-31T15:29:25.156Z\nblocker_discovered: false\n---\n\n# T01: Added aggregationMode field to ZoneRect/ZonePolygon in backend and frontend types, with whitelist validation in parseZone\n\n**Added aggregationMode field to ZoneRect/ZonePolygon in backend and frontend types, with whitelist validation in parseZone**\n\n## What Happened\n\nAdded `aggregationMode?: AggregationMode` to both ZoneRect and ZonePolygon interfaces in backend domain types (importing from templateGenerator). Added the equivalent literal union type to frontend types (self-contained). Updated parseZone in the rooms router to validate against the three known aggregation modes and conditionally include it on returned zone objects. Invalid/missing values are omitted cleanly.\n\n## Verification\n\nRan tsc --noEmit on both backend and frontend. All errors are pre-existing — zero new errors introduced by the S04 type and parsing changes.\n\n## Verification Evidence\n\n| # | Command | Exit Code | Verdict | Duration |\n|---|---------|-----------|---------|----------|\n| 1 | `cd backend && npx tsc --noEmit` | 2 | ✅ pass (pre-existing errors only, none in modified files) | 4100ms |\n| 2 | `cd frontend && npx tsc --noEmit` | 2 | ✅ pass (pre-existing errors only, none in modified files) | 4100ms |\n\n\n## Deviations\n\nNone.\n\n## Known Issues\n\nNone.\n\n## Files Created/Modified\n\n- `everything-presence-mmwave-configurator/backend/src/domain/types.ts`\n- `everything-presence-mmwave-configurator/frontend/src/api/types.ts`\n- `everything-presence-mmwave-configurator/backend/src/routes/rooms.ts`\n",
+      "description": "Add the `aggregationMode` field to Zone types in both backend and frontend so zones can carry their aggregation strategy. Update the rooms router parseZone to preserve the field through normalization. This is a small foundational change that unblocks T02 and T03.\n\n## Steps\n\n1. **Backend types** (`backend/src/domain/types.ts`): Import `AggregationMode` from `../ha/templateGenerator`. Add `aggregationMode?: AggregationMode` to both `ZoneRect` and `ZonePolygon` interfaces.\n\n2. **Frontend types** (`frontend/src/api/types.ts`): Add `aggregationMode?: 'or' | 'majority' | 'no_change_on_tie'` to both `ZoneRect` and `ZonePolygon` interfaces. Do NOT import from backend — duplicate the literal union type to keep frontend self-contained.\n\n3. **parseZone in rooms router** (`backend/src/routes/rooms.ts`): In the `parseZone` function, extract `aggregationMode` from the input, validate it against the three valid values (`'or'`, `'majority'`, `'no_change_on_tie'`), and include it on the returned zone object. Invalid/missing values should be omitted (will default to `'or'` at template generation time in T02).\n\n4. **Type check both sides**:\n   - `cd backend && npx tsc --noEmit` — 0 new errors from S04 files\n   - `cd frontend && npx tsc --noEmit` — 0 new errors from S04 files\n\n## Must-Haves\n\n- [ ] `aggregationMode?: AggregationMode` on `ZoneRect` and `ZonePolygon` in backend types\n- [ ] `aggregationMode?: 'or' | 'majority' | 'no_change_on_tie'` on `ZoneRect` and `ZonePolygon` in frontend types\n- [ ] `parseZone` preserves valid `aggregationMode` values, omits invalid ones\n- [ ] Both `tsc --noEmit` checks pass with 0 new errors",
+      "estimate": "20m",
+      "files": [
+        "everything-presence-mmwave-configurator/backend/src/domain/types.ts",
+        "everything-presence-mmwave-configurator/frontend/src/api/types.ts",
+        "everything-presence-mmwave-configurator/backend/src/routes/rooms.ts"
+      ],
+      "verify": "cd everything-presence-mmwave-configurator/backend && npx tsc --noEmit && cd ../frontend && npx tsc --noEmit",
+      "inputs": [
+        "`everything-presence-mmwave-configurator/backend/src/domain/types.ts` — existing ZoneRect and ZonePolygon interfaces to extend",
+        "`everything-presence-mmwave-configurator/frontend/src/api/types.ts` — existing frontend Zone types to extend",
+        "`everything-presence-mmwave-configurator/backend/src/routes/rooms.ts` — parseZone function that normalizes zone data from HTTP request bodies",
+        "`everything-presence-mmwave-configurator/backend/src/ha/templateGenerator.ts` — AggregationMode type to import"
+      ],
+      "expected_output": [
+        "`everything-presence-mmwave-configurator/backend/src/domain/types.ts` — ZoneRect and ZonePolygon with aggregationMode field",
+        "`everything-presence-mmwave-configurator/frontend/src/api/types.ts` — ZoneRect and ZonePolygon with aggregationMode field",
+        "`everything-presence-mmwave-configurator/backend/src/routes/rooms.ts` — parseZone preserves aggregationMode"
+      ],
+      "observability_impact": "",
+      "full_plan_md": "",
+      "sequence": 0
+    },
+    {
+      "milestone_id": "M004",
+      "slice_id": "S04",
+      "id": "T02",
+      "title": "Build room device lifecycle orchestrator with unit tests",
+      "status": "pending",
+      "one_liner": "",
+      "narrative": "",
+      "verification_result": "",
+      "duration": "",
+      "completed_at": null,
+      "blocker_discovered": false,
+      "deviations": "",
+      "known_issues": "",
+      "key_files": [],
+      "key_decisions": [],
+      "full_summary_md": "",
+      "description": "Create the core service that bridges S03's zone assignment results with S02's RoomDeviceService. The lifecycle orchestrator takes a RoomConfig + zone assignments, resolves per-device zone entity IDs, builds a `RoomDeviceDescriptor`, and calls `createRoomDevice()`. This is the riskiest piece of S04 — all integration logic lives here.\n\n## Steps\n\n1. **Create `backend/src/domain/roomDeviceLifecycle.ts`** — new service with:\n   - `RoomDeviceLifecycleDeps` interface: `{ roomDeviceService: RoomDeviceService, deviceEntityService: IDeviceEntityService, deviceMappingStorage: IDeviceMappingStorage, profileLoader: IProfileLoader }`\n   - `buildRoomDeviceDescriptor(room: RoomConfig, assignments: ZoneAssignment[]): RoomDeviceDescriptor` — pure function that:\n     a. Groups assignments by room zoneId (multiple sensors may cover the same room zone)\n     b. For each room zone, iterates covering sensors and resolves entity IDs:\n        - From `assignment.slotId` (e.g. `zone2`), derive entity keys: `zone2Occupancy`, `zone2TargetCount`\n        - Call `deviceEntityService.getEntityId(assignment.sensorDeviceId, 'zone2Occupancy')` → occupancy entity\n        - Call `deviceEntityService.getEntityId(assignment.sensorDeviceId, 'zone2TargetCount')` → target count entity\n        - If either returns null, skip that sensor for that zone (log warning)\n     c. Maps room zone index (0-based, order of zones in room.zones) to `RoomDeviceDescriptor.zones[].zoneIndex`\n     d. Uses `zone.aggregationMode ?? 'or'` as the aggregation mode\n     e. Uses `zone.label ?? zone.id` as zoneName\n     f. Returns the complete descriptor\n   - `createOrUpdateRoomDevice(room: RoomConfig, assignments: ZoneAssignment[], deps: RoomDeviceLifecycleDeps): Promise<{ created: boolean, warnings: string[] }>` — orchestration function that:\n     a. Calls `buildRoomDeviceDescriptor()` to build the descriptor\n     b. Skips if descriptor has 0 zones with covering entities (all sensors had missing mappings)\n     c. Calls `deps.roomDeviceService.createRoomDevice(descriptor)` (re-publishing updates existing)\n     d. Returns created=true and any warnings from entity resolution\n   - `removeRoomDevice(room: RoomConfig, deps: { roomDeviceService: RoomDeviceService }): Promise<void>` — calls `removeRoomDevice(room.id, room.zones.length)`\n\n2. **Entity key derivation from SlotId** — critical mapping:\n   - SlotId `zone1` → entity keys `zone1Occupancy`, `zone1TargetCount` (1-based, matching device profile convention)\n   - SlotId `zone2` → `zone2Occupancy`, `zone2TargetCount`\n   - SlotId `exclusion1`/`entry1` → skip (no occupancy/target_count entities for exclusion/entry zones)\n   - Room zone index in RoomDeviceDescriptor is 0-based (matching S02 convention where `zone_0_occupancy` is the first room zone)\n\n3. **Create unit test file `backend/src/__tests__/unit/roomDeviceLifecycle.test.ts`** — at least 12 tests:\n   - Builds correct descriptor for single zone + single sensor\n   - Builds correct descriptor for multiple zones + single sensor\n   - Builds correct descriptor for single zone + multiple covering sensors (entities aggregated)\n   - Uses zone.aggregationMode when present, defaults to 'or' when absent\n   - Uses zone.label as zoneName, falls back to zone.id\n   - Skips sensors with missing entity mappings (warning logged, not thrown)\n   - Skips exclusion/entry slot assignments (no occupancy entities)\n   - Returns empty zones array when all entity lookups fail\n   - createOrUpdateRoomDevice calls roomDeviceService.createRoomDevice with built descriptor\n   - createOrUpdateRoomDevice skips when no zones have covering entities\n   - removeRoomDevice calls roomDeviceService.removeRoomDevice with correct roomId and zoneCount\n   - EP One sensor assignments (if any leak through) produce no entity lookups\n\n## Must-Haves\n\n- [ ] `buildRoomDeviceDescriptor` correctly groups multi-sensor assignments by room zone\n- [ ] Entity key derivation from SlotId uses 1-based keys (`zone1Occupancy` etc.)\n- [ ] Room zone indices in descriptor are 0-based\n- [ ] Missing entity mappings produce warnings, not errors\n- [ ] Aggregation mode defaults to `'or'` when zone has no `aggregationMode`\n- [ ] ≥12 unit tests passing\n\n## Negative Tests\n\n- **Malformed inputs**: ZoneAssignment with unknown slotId format, zone with no matching assignment\n- **Error paths**: deviceEntityService.getEntityId returns null for all sensors, RoomDeviceService.createRoomDevice throws\n- **Boundary conditions**: empty assignments array, single zone with single sensor, zone with only exclusion assignments (no occupancy entities)",
+      "estimate": "1h30m",
+      "files": [
+        "everything-presence-mmwave-configurator/backend/src/domain/roomDeviceLifecycle.ts",
+        "everything-presence-mmwave-configurator/backend/src/__tests__/unit/roomDeviceLifecycle.test.ts"
+      ],
+      "verify": "cd everything-presence-mmwave-configurator && npx vitest run backend/src/__tests__/unit/roomDeviceLifecycle.test.ts",
+      "inputs": [
+        "`everything-presence-mmwave-configurator/backend/src/ha/roomDeviceService.ts` — RoomDeviceService class and RoomDeviceDescriptor interface (S02)",
+        "`everything-presence-mmwave-configurator/backend/src/ha/templateGenerator.ts` — AggregationMode type",
+        "`everything-presence-mmwave-configurator/backend/src/domain/zoneAssignment.ts` — ZoneAssignment and SlotId types (S01/S03)",
+        "`everything-presence-mmwave-configurator/backend/src/domain/roomZoneOrchestrator.ts` — IDeviceEntityService, IDeviceMappingStorage, IProfileLoader interfaces",
+        "`everything-presence-mmwave-configurator/backend/src/domain/types.ts` — RoomConfig, Zone types with aggregationMode (from T01)",
+        "`everything-presence-mmwave-configurator/backend/src/domain/deviceEntityService.ts` — getEntityId(deviceId, entityKey) method"
+      ],
+      "expected_output": [
+        "`everything-presence-mmwave-configurator/backend/src/domain/roomDeviceLifecycle.ts` — lifecycle orchestrator service",
+        "`everything-presence-mmwave-configurator/backend/src/__tests__/unit/roomDeviceLifecycle.test.ts` — ≥12 unit tests"
+      ],
+      "observability_impact": "",
+      "full_plan_md": "",
+      "sequence": 0
+    },
+    {
+      "milestone_id": "M004",
+      "slice_id": "S04",
+      "id": "T03",
+      "title": "Wire MqttClient into server and integrate lifecycle into routes",
+      "status": "pending",
+      "one_liner": "",
+      "narrative": "",
+      "verification_result": "",
+      "duration": "",
+      "completed_at": null,
+      "blocker_discovered": false,
+      "deviations": "",
+      "known_issues": "",
+      "key_files": [],
+      "key_decisions": [],
+      "full_summary_md": "",
+      "description": "Connect the lifecycle orchestrator to the running server: instantiate MqttClient at startup, extend RoomsRouterDependencies, hook room device creation into the apply-zones flow, and add cleanup to the DELETE route.\n\n## Steps\n\n1. **MqttClient in `index.ts`** (`backend/src/index.ts`): After creating readTransport and profileLoader, check `config.mqtt`. If present, create a `MqttClient(config.mqtt)`, call `await mqttClient.connect()`, and log success. If MQTT config is absent, log info and continue without MQTT — room device lifecycle will be a no-op. Pass mqttClient into `createServer` deps.\n\n2. **Extend ServerDependencies and RoomsRouterDependencies** (`backend/src/server.ts`, `backend/src/routes/rooms.ts`):\n   - Add `mqttClient?: MqttClient` and `readTransport?: IHaReadTransport` to `RoomsRouterDependencies`\n   - In `createServer`, pass `mqttClient: deps?.mqttClient` and `readTransport: deps?.readTransport` into roomsDeps\n   - Add `mqttClient?: MqttClient` to `ServerDependencies`\n   - In `index.ts`, include mqttClient in the deps passed to `createServer`\n\n3. **Lifecycle integration in apply-zones route** (`backend/src/routes/rooms.ts`):\n   - After the existing `orchestrator.applyRoomZones(room)` call succeeds, check if `deps.mqttClient` is available\n   - If yes: import and call `createOrUpdateRoomDevice(room, assignmentResults, lifecycleDeps)` where assignmentResults come from the orchestrator result's assignment data\n   - The apply-zones route currently returns the orchestrator result — extend the response to include `roomDevice: { created: boolean, warnings: string[] }` or `roomDevice: null` when MQTT unavailable\n   - **Key detail**: The orchestrator result doesn't directly expose `ZoneAssignment[]` — it returns `DeviceWriteResult[]` with `assignedZoneIds`. The lifecycle orchestrator needs the full assignment data. Solution: run `assignZonesToDevices` in the route handler (or refactor to expose assignments). Better approach: run the zone assignment engine directly in the route to get both the write results AND the assignment data, then pass assignments to the lifecycle orchestrator.\n   - **Revised approach**: Import `computeAllCoverage` and `assignZonesToDevices` into the route handler. After the existing orchestrator call, run assignment independently to get `ZoneAssignment[]` for the lifecycle orchestrator. This avoids modifying the existing orchestrator's return type. The coverage + assignment computation is pure and fast — running it twice is fine.\n\n4. **DELETE route cleanup** (`backend/src/routes/rooms.ts`):\n   - In the DELETE handler, before calling `storage.deleteRoom()`, capture `room.zones.length`\n   - If `deps.mqttClient` is available, create `RoomDeviceService` and call `removeRoomDevice(roomId, zoneCount)`\n   - Wrap in try/catch — cleanup failure should not prevent room deletion (log warning, continue)\n\n5. **Type check + full test suite**:\n   - `cd backend && npx tsc --noEmit` — 0 new errors\n   - `npx vitest run` — ≥246 tests passing, 0 regressions\n\n## Must-Haves\n\n- [ ] MqttClient created and connected at startup when `config.mqtt` present\n- [ ] Server starts normally when `config.mqtt` is absent (no MQTT, no crash)\n- [ ] Apply-zones triggers room device creation after successful zone writes\n- [ ] DELETE route cleans up room device before removing from storage\n- [ ] Cleanup failure in DELETE is non-fatal (logs warning, room still deleted)\n- [ ] All 246+ existing tests still pass\n\n## Failure Modes\n\n| Dependency | On error | On timeout | On malformed response |\n|------------|----------|-----------|----------------------|\n| MQTT broker | Log error, skip room device creation — zone writes still succeed | MqttClient.connect() has 10s timeout, server startup fails if MQTT configured but unreachable | N/A — we control the publish payload |\n| deviceEntityService.getEntityId | Returns null → skip that sensor → warning in response | N/A (synchronous lookup) | N/A |\n| RoomDeviceService.createRoomDevice | Catch, log error, include in response warnings — zone writes already succeeded | MQTT publish timeout from underlying client | N/A |",
+      "estimate": "1h",
+      "files": [
+        "everything-presence-mmwave-configurator/backend/src/index.ts",
+        "everything-presence-mmwave-configurator/backend/src/server.ts",
+        "everything-presence-mmwave-configurator/backend/src/routes/rooms.ts"
+      ],
+      "verify": "cd everything-presence-mmwave-configurator/backend && npx tsc --noEmit && cd .. && npx vitest run",
+      "inputs": [
+        "`everything-presence-mmwave-configurator/backend/src/domain/roomDeviceLifecycle.ts` — lifecycle orchestrator from T02",
+        "`everything-presence-mmwave-configurator/backend/src/ha/mqttClient.ts` — MqttClient class (S02)",
+        "`everything-presence-mmwave-configurator/backend/src/ha/roomDeviceService.ts` — RoomDeviceService class (S02)",
+        "`everything-presence-mmwave-configurator/backend/src/config.ts` — AppConfig with optional mqtt field",
+        "`everything-presence-mmwave-configurator/backend/src/index.ts` — server bootstrap to extend with MqttClient",
+        "`everything-presence-mmwave-configurator/backend/src/server.ts` — createServer + ServerDependencies to extend",
+        "`everything-presence-mmwave-configurator/backend/src/routes/rooms.ts` — rooms router to hook lifecycle into",
+        "`everything-presence-mmwave-configurator/backend/src/domain/zoneAssignment.ts` — assignZonesToDevices, computeAllCoverage for re-running assignment in route",
+        "`everything-presence-mmwave-configurator/backend/src/domain/zoneCoverage.ts` — computeAllCoverage"
+      ],
+      "expected_output": [
+        "`everything-presence-mmwave-configurator/backend/src/index.ts` — MqttClient creation + connection at startup",
+        "`everything-presence-mmwave-configurator/backend/src/server.ts` — extended ServerDependencies with mqttClient",
+        "`everything-presence-mmwave-configurator/backend/src/routes/rooms.ts` — lifecycle hooks in apply-zones and DELETE"
+      ],
+      "observability_impact": "MqttClient connection status logged at startup. Room device create/remove logged via existing RoomDeviceService pino logs. Lifecycle orchestrator warnings surfaced in apply-zones API response. DELETE cleanup failures logged as warnings.",
+      "full_plan_md": "",
+      "sequence": 0
     }
   ],
   "decisions": [
@@ -2201,6 +2332,30 @@
       "decision": "ZoneWriter multi-sensor write strategy",
       "choice": "Add new `applyTranslatedZones()` method that accepts DeviceZoneRect/DeviceZonePolygon with explicit slot indices, rather than modifying existing `applyZones()`/`applyPolygonZones()`",
       "rationale": "Existing methods use ID-based slot matching (extractZoneIndex from zone.id) which doesn't work for multi-sensor assignment where the same room zone maps to different slots on different devices. New method uses explicit slot indices from ZoneAssignment.slotId and writes begin/end coordinates directly (no x+width conversion). Existing methods remain unchanged — still used by single-device ZoneEditorPage and WizardPage flows.",
+      "revisable": "Yes",
+      "made_by": "agent",
+      "superseded_by": null
+    },
+    {
+      "seq": 26,
+      "id": "D014",
+      "when_context": "M004/S03/T02",
+      "scope": "architecture",
+      "decision": "Zone write failure in handleSaveRoom is non-fatal",
+      "choice": "Room data persists even when zone writes fail. Zone write errors logged to console; S05 will add UI for warnings/unassigned zones.",
+      "rationale": "Room geometry is the source of truth — losing it because zone writes failed would be worse UX. Zone writes can be retried via re-save. Decoupling ensures room data safety.",
+      "revisable": "Yes",
+      "made_by": "agent",
+      "superseded_by": null
+    },
+    {
+      "seq": 27,
+      "id": "D015",
+      "when_context": "M004/S04",
+      "scope": "architecture",
+      "decision": "Room device lifecycle orchestrator placement and assignment data flow",
+      "choice": "Separate `roomDeviceLifecycle.ts` service in domain/ with pure `buildRoomDeviceDescriptor` function. Apply-zones route re-runs zone assignment to get ZoneAssignment[] for the lifecycle orchestrator rather than modifying RoomZoneOrchestrator's return type.",
+      "rationale": "RoomZoneOrchestrator (S03) returns DeviceWriteResult[] which lacks the raw ZoneAssignment data needed by the lifecycle orchestrator. Rather than changing S03's public interface (risking regressions), the apply-zones route runs the pure assignment functions independently. The coverage + assignment computation is stateless and fast — running it twice has negligible cost. This keeps S03's contract stable and the lifecycle orchestrator cleanly separated from the zone write pipeline.",
       "revisable": "Yes",
       "made_by": "agent",
       "superseded_by": null
@@ -2822,6 +2977,28 @@
       "verdict": "✅ pass (246/246 passing, 23 pre-existing Docker failures)",
       "duration_ms": 28700,
       "created_at": "2026-03-31T14:22:12.399Z"
+    },
+    {
+      "id": 57,
+      "task_id": "T01",
+      "slice_id": "S04",
+      "milestone_id": "M004",
+      "command": "cd backend && npx tsc --noEmit",
+      "exit_code": 2,
+      "verdict": "✅ pass (pre-existing errors only, none in modified files)",
+      "duration_ms": 4100,
+      "created_at": "2026-03-31T15:29:25.156Z"
+    },
+    {
+      "id": 58,
+      "task_id": "T01",
+      "slice_id": "S04",
+      "milestone_id": "M004",
+      "command": "cd frontend && npx tsc --noEmit",
+      "exit_code": 2,
+      "verdict": "✅ pass (pre-existing errors only, none in modified files)",
+      "duration_ms": 4100,
+      "created_at": "2026-03-31T15:29:25.156Z"
     }
   ]
 }

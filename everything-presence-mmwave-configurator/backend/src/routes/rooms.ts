@@ -23,13 +23,18 @@ export const createRoomsRouter = (deps?: RoomsRouterDependencies): Router => {
     const enabled = zone?.enabled !== undefined ? Boolean(zone.enabled) : undefined;
     const label = typeof zone?.label === 'string' && zone.label.trim() ? zone.label.trim() : undefined;
 
+    // Validate aggregationMode — only accept known values, omit otherwise
+    const VALID_AGGREGATION_MODES = ['or', 'majority', 'no_change_on_tie'] as const;
+    const rawMode = zone?.aggregationMode;
+    const aggregationMode = VALID_AGGREGATION_MODES.includes(rawMode) ? rawMode : undefined;
+
     // Polygon zone: has vertices array
     if (Array.isArray(zone?.vertices) && zone.vertices.length >= 3) {
       const vertices = zone.vertices
         .map((v: any) => ({ x: Number(v?.x ?? 0), y: Number(v?.y ?? 0) }))
         .filter((v: { x: number; y: number }) => Number.isFinite(v.x) && Number.isFinite(v.y));
       if (vertices.length >= 3) {
-        return { id, type, vertices, enabled, label } as ZonePolygon;
+        return { id, type, vertices, enabled, label, ...(aggregationMode && { aggregationMode }) } as ZonePolygon;
       }
     }
 
@@ -41,6 +46,7 @@ export const createRoomsRouter = (deps?: RoomsRouterDependencies): Router => {
       width: Number(zone?.width ?? 0),
       height: Number(zone?.height ?? 0),
       enabled, label,
+      ...(aggregationMode && { aggregationMode }),
     } as ZoneRect;
   };
 
