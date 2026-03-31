@@ -1,5 +1,6 @@
 import { IHaWriteClient } from './writeClient';
 import { ZoneRect, ZonePolygon, EntityMappings } from '../domain/types';
+import { DeviceZone, DeviceZoneRect, DeviceZonePolygon, isDeviceZoneRect } from '../domain/coordinateTransform';
 import { polygonToText } from '../domain/polygonUtils';
 import { EntityResolver } from '../domain/entityResolver';
 import { deviceEntityService } from '../domain/deviceEntityService';
@@ -32,6 +33,20 @@ export interface ZoneWriteFailure {
 export interface ZoneWriteResult {
   ok: boolean;
   failures: ZoneWriteFailure[];
+}
+
+/** A zone pre-assigned to a specific slot index for direct write. */
+export interface TranslatedZoneAssignment {
+  zone: DeviceZone;
+  slotIndex: number;
+  slotType: 'regular' | 'exclusion' | 'entry';
+}
+
+/** Configuration for clearing unused slots after writing. */
+export interface TranslatedZoneWriteConfig {
+  maxRegularSlots: number;
+  maxExclusionSlots: number;
+  maxEntrySlots: number;
 }
 
 export class ZoneWriter {
@@ -89,6 +104,139 @@ export class ZoneWriter {
     }
 
     return failures;
+  }
+
+  /**
+   * Write pre-translated device-space zones to specific slot indices.
+   *
+   * Unlike applyZones/applyPolygonZones which match zones by ID, this method
+   * accepts explicit slot assignments from the multi-device orchestrator.
+   * Rect zones write beginX/endX/beginY/endY directly (no x+width conversion).
+   * Polygon zones write via polygonToText().
+   * Unused slots are cleared based on the provided config limits.
+   *
+   * @param deviceId    - Device ID for entity resolution
+   * @param assignments - Pre-assigned zones with slot indices
+   * @param config      - Max slot counts for clearing unused slots
+   */
+  async applyTranslatedZones(
+    deviceId: string,
+    assignments: TranslatedZoneAssignment[],
+    config: TranslatedZoneWriteConfig,
+  ): Promise<ZoneWriteResult> {
+    const tasks: ZoneWriteTask[] = [];
+
+    logger.debug(
+      { deviceId, assignmentCount: assignments.length, config },
+      'Applying translated zones'
+    );
+
+    // Track which slot indices are written per type
+    const writtenSlots: Record<string, Set<number>> = {
+      regular: new Set(),
+      exclusion: new Set(),
+      entry: new Set(),
+    };
+
+    // Write assigned zones
+    for (const { zone, slotIndex, slotType } of assignments) {
+      writtenSlots[slotType].add(slotIndex);
+
+      if (isDeviceZoneRect(zone)) {
+        // Rect zone: resolve entity set and write beginX/endX/beginY/endY directly
+        const zoneEntitySet = deviceEntityService.getZoneEntitySet(deviceId, slotType, slotIndex);
+        if (!zoneEntitySet) {
+          logger.warn(
+            { deviceId, slotType, slotIndex, zoneId: zone.id },
+            'Could not resolve zone entity set — skipping'
+          );
+          continue;
+        }
+
+        const coords: Array<{ entity: string; value: number }> = [
+          { entity: zoneEntitySet.beginX, value: zone.beginX },
+          { entity: zoneEntitySet.endX, value: zone.endX },
+          { entity: zoneEntitySet.beginY, value: zone.beginY },
+          { entity: zoneEntitySet.endY, value: zone.endY },
+        ];
+
+        for (const { entity, value } of coords) {
+          tasks.push({
+            execute: () => this.writeClient.setNumberEntity(entity, Math.round(value)),
+            description: `${slotType} zone ${slotIndex} ${entity} (zone ${zone.id})`,
+            entityId: entity,
+          });
+        }
+      } else {
+        // Polygon zone: resolve polygon entity and write text
+        const polyType = slotType === 'regular' ? 'polygon'
+          : slotType === 'exclusion' ? 'polygonExclusion'
+          : 'polygonEntry';
+        const entityId = deviceEntityService.getPolygonZoneEntity(deviceId, polyType, slotIndex);
+        if (!entityId) {
+          logger.warn(
+            { deviceId, slotType, slotIndex, zoneId: zone.id },
+            'Could not resolve polygon entity — skipping'
+          );
+          continue;
+        }
+
+        const textValue = polygonToText((zone as DeviceZonePolygon).vertices);
+        tasks.push({
+          execute: () => this.writeClient.setTextEntity(entityId, textValue),
+          description: `${slotType} polygon ${slotIndex} (zone ${zone.id})`,
+          entityId,
+        });
+      }
+    }
+
+    // Clear unused slots
+    const clearSlots = (
+      slotType: 'regular' | 'exclusion' | 'entry',
+      maxSlots: number,
+      written: Set<number>,
+    ) => {
+      for (let i = 1; i <= maxSlots; i++) {
+        if (written.has(i)) continue;
+
+        // Clear rect entity set
+        const zoneEntitySet = deviceEntityService.getZoneEntitySet(deviceId, slotType, i);
+        if (zoneEntitySet) {
+          for (const entity of [zoneEntitySet.beginX, zoneEntitySet.endX, zoneEntitySet.beginY, zoneEntitySet.endY]) {
+            tasks.push({
+              execute: () => this.writeClient.setNumberEntity(entity, 0),
+              description: `clear ${slotType} zone ${i} ${entity}`,
+              entityId: entity,
+            });
+          }
+        }
+
+        // Clear polygon entity
+        const polyType = slotType === 'regular' ? 'polygon'
+          : slotType === 'exclusion' ? 'polygonExclusion'
+          : 'polygonEntry';
+        const polyEntityId = deviceEntityService.getPolygonZoneEntity(deviceId, polyType, i);
+        if (polyEntityId) {
+          tasks.push({
+            execute: () => this.writeClient.setTextEntity(polyEntityId, ''),
+            description: `clear ${slotType} polygon ${i}`,
+            entityId: polyEntityId,
+          });
+        }
+      }
+    };
+
+    clearSlots('regular', config.maxRegularSlots, writtenSlots.regular);
+    clearSlots('exclusion', config.maxExclusionSlots, writtenSlots.exclusion);
+    clearSlots('entry', config.maxEntrySlots, writtenSlots.entry);
+
+    logger.info(
+      { deviceId, taskCount: tasks.length, assigned: assignments.length },
+      'Executing translated zone writes sequentially'
+    );
+
+    const failures = await this.executeTasksSequentially(tasks);
+    return { ok: failures.length === 0, failures };
   }
 
   /**

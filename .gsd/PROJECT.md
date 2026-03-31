@@ -36,12 +36,13 @@ Room-level zone management with automatic coordinate translation and HA integrat
 - **Backend**: Express + TypeScript (CommonJS, ES2021), pino logging, WebSocket for live tracking
 - **Frontend**: React 18 + Vite + Tailwind CSS (ESM, ES2022), Biome for linting
 - **Persistence**: JSON files (rooms.json, floors.json, settings.json)
-- **Integration**: Home Assistant REST + WebSocket APIs for reads/writes, MQTT (Mosquitto) in dev stack for mock devices
+- **Integration**: Home Assistant REST + WebSocket APIs for reads/writes, MQTT (Mosquitto) for mock devices + virtual room device discovery
 - **Profiles**: JSON device profiles for EP Lite, EP One, EP Pro — each defines zone limits, FOV, range, entity templates
 - **Canvas rendering**: Generic item system in `components/canvas/` — per-type renderers with shared `ItemRenderer` interface, unified `ActiveDrag` state machine
 - **Zone system**: Zones stored as room-level `Zone[]` on `RoomConfig`, types: ZoneRect | ZonePolygon, zoneWriter writes device-relative coordinates to HA entities
 - **Multi-sensor**: `sensors: SensorAttachment[]` on RoomConfig, per-sensor colored rendering, selection-driven dimming, `selectedItem` unified selection model
 - **Dev**: Docker compose with HA 2026.2, Mosquitto MQTT, MQTT mock devices
+- **HA room devices**: MQTT discovery creates virtual devices with binary_sensor (occupancy) and sensor (target count) entities per zone. Jinja2 template generators produce OR/majority/no-change-on-tie/max aggregation templates. `ep_room/` topic namespace. `IHaReadTransport.call()` exposed for WS API commands.
 
 ## Capability Contract
 
