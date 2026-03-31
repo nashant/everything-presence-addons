@@ -4,9 +4,9 @@
 **Demo:** After this: Backend API returns rooms with `sensors[]` array. Existing rooms auto-migrate from `deviceId` → `sensors[0]`. `POST/PUT /api/rooms` accepts both old and new format. All backend tests pass.
 
 ## Tasks
-- [ ] **T01: Add SensorAttachment type and update RoomConfig + normalizeRoom** — 
+- [x] **T01: Add SensorAttachment type and update RoomConfig + normalizeRoom** — 
   - Files: backend/src/domain/types.ts, backend/src/routes/rooms.ts
   - Verify: `npx tsc --noEmit` passes
-- [ ] **T02: Startup migration + integration tests** — 
+- [x] **T02: Startup migration + integration tests** — 
   - Files: backend/src/routes/rooms.ts, backend/src/__tests__/integration/rooms.test.ts
   - Verify: `npx vitest run` — all tests pass
