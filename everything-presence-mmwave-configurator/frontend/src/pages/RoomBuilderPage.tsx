@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState, useRef } from 'react';
 import { fetchDevices, fetchProfiles, ingressAware } from '../api/client';
 import { fetchRooms, updateRoom } from '../api/rooms';
+import { applyRoomZones } from '../api/zones';
 import { RoomCanvas, type CanvasItemType } from '../components/RoomCanvas';
 import { DiscoveredDevice, DeviceProfile, RoomConfig, LiveState, FurnitureInstance, FurnitureType, Door, Zone, ZoneRect, ZonePolygon, isZoneRect, isZonePolygon, DevicePlacement, SensorAttachment } from '../api/types';
 import { SensorRenderInfo, SENSOR_COLORS } from '../components/canvas/types';
@@ -1077,6 +1078,25 @@ export const RoomBuilderPage: React.FC<RoomBuilderPageProps> = ({
       setRooms((prev) => prev.map((r) => (r.id === selectedRoom.id ? saved : r)));
       onWizardProgress?.({ outlineDone: true, placementDone: true });
       setError(null);
+
+      // Trigger zone-to-sensor assignment if room has sensors and zones
+      const hasSensors = (saved.sensors?.length ?? 0) > 0;
+      const hasZones = (saved.zones?.length ?? 0) > 0;
+      if (hasSensors && hasZones) {
+        try {
+          const zoneResult = await applyRoomZones(saved.id);
+          if (zoneResult.warnings?.length) {
+            console.warn('[apply-zones] warnings:', zoneResult.warnings);
+          }
+          if (zoneResult.unassigned?.length) {
+            console.warn('[apply-zones] unassigned zones:', zoneResult.unassigned);
+          }
+        } catch (zoneErr) {
+          // Room data is already saved — zone write failure is non-fatal
+          console.error('[apply-zones] failed:', zoneErr);
+        }
+      }
+
       setShowSavedModal(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save room');

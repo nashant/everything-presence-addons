@@ -7,7 +7,7 @@ import { logger } from './logger';
 import { createMetaRouter } from './routes/meta';
 import { createDevicesRouter, DevicesRouterDependencies } from './routes/devices';
 import { createEntityDiscoveryRouter } from './routes/entityDiscovery';
-import { createRoomsRouter } from './routes/rooms';
+import { createRoomsRouter, RoomsRouterDependencies } from './routes/rooms';
 import { createZonesRouter } from './routes/zones';
 import { createSettingsRouter } from './routes/settings';
 import { createLiveRouter } from './routes/live';
@@ -51,7 +51,10 @@ export const createServer = (config: AppConfig, deps?: ServerDependencies): expr
   app.use(express.json());
 
   app.use('/api/meta', createMetaRouter(config, deps?.transportStatus));
-  app.use('/api/rooms', createRoomsRouter());
+  const roomsDeps: RoomsRouterDependencies | undefined = deps
+    ? { writeClient: deps.writeClient, profileLoader: deps.profileLoader }
+    : undefined;
+  app.use('/api/rooms', createRoomsRouter(roomsDeps));
   app.use('/api/floors', createFloorsRouter());
   app.use('/api/zones', createZonesRouter());
   app.use('/api/settings', createSettingsRouter());

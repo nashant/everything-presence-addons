@@ -84,7 +84,7 @@
   - Estimate: 2h
   - Files: everything-presence-mmwave-configurator/backend/src/ha/zoneWriter.ts, everything-presence-mmwave-configurator/backend/src/domain/roomZoneOrchestrator.ts, everything-presence-mmwave-configurator/backend/src/__tests__/unit/roomZoneOrchestrator.test.ts
   - Verify: cd everything-presence-mmwave-configurator && npx vitest run src/__tests__/unit/roomZoneOrchestrator.test.ts && npx vitest run src/__tests__/unit/coordinateTransform.test.ts src/__tests__/unit/zoneCoverage.test.ts src/__tests__/unit/zoneAssignment.test.ts
-- [ ] **T02: Wire route endpoint and frontend apply-zones integration** — Add `POST /api/rooms/:roomId/apply-zones` route that calls RoomZoneOrchestrator. Add frontend `applyRoomZones()` API function and call it from `handleSaveRoom` in RoomBuilderPage after the room PUT succeeds. Run full verification: tsc, all tests, no regressions.
+- [x] **T02: Added POST /api/rooms/:roomId/apply-zones route calling RoomZoneOrchestrator, frontend applyRoomZones() API function, and wired handleSaveRoom to auto-apply zones after successful room PUT** — Add `POST /api/rooms/:roomId/apply-zones` route that calls RoomZoneOrchestrator. Add frontend `applyRoomZones()` API function and call it from `handleSaveRoom` in RoomBuilderPage after the room PUT succeeds. Run full verification: tsc, all tests, no regressions.
 
 ## Steps
 

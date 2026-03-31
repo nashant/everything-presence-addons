@@ -120,3 +120,31 @@ export const pushPolygonZonesToDevice = async (
   });
   return handle<{ ok: boolean; warnings?: Array<{ entityId?: string; description: string; error: string }> }>(res);
 };
+
+// ==================== ROOM-LEVEL ZONE ORCHESTRATION ====================
+
+export interface ApplyZonesDeviceResult {
+  deviceId: string;
+  ok: boolean;
+  assignedZoneIds: string[];
+  failureCount: number;
+}
+
+export interface ApplyZonesResult {
+  ok: boolean;
+  results: ApplyZonesDeviceResult[];
+  unassigned: Array<{ zoneId: string; reason: string }>;
+  warnings: string[];
+}
+
+/**
+ * Trigger room-level zone orchestration: assigns zones to sensors,
+ * translates coordinates, and writes device-relative zones via HA.
+ */
+export const applyRoomZones = async (roomId: string): Promise<ApplyZonesResult> => {
+  const res = await fetch(ingressAware(`api/rooms/${roomId}/apply-zones`), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+  });
+  return handle<ApplyZonesResult>(res);
+};

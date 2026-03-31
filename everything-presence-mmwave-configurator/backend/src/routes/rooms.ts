@@ -2,8 +2,19 @@ import { Router } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { storage } from '../config/storage';
 import { DevicePlacement, Door, EntityMappings, FurnitureInstance, RoomConfig, RoomShell, SensorAttachment, Zone, ZoneRect, ZonePolygon, ZoneEntitySet, TargetEntitySet } from '../domain/types';
+import type { IHaWriteClient } from '../ha/writeClient';
+import type { DeviceProfileLoader } from '../domain/deviceProfiles';
+import { RoomZoneOrchestrator } from '../domain/roomZoneOrchestrator';
+import { deviceEntityService } from '../domain/deviceEntityService';
+import { deviceMappingStorage } from '../config/deviceMappingStorage';
+import { logger } from '../logger';
 
-export const createRoomsRouter = (): Router => {
+export interface RoomsRouterDependencies {
+  writeClient: IHaWriteClient;
+  profileLoader: DeviceProfileLoader;
+}
+
+export const createRoomsRouter = (deps?: RoomsRouterDependencies): Router => {
   const router = Router();
 
   const parseZone = (zone: any, fallbackId?: string): Zone => {
@@ -357,6 +368,62 @@ export const createRoomsRouter = (): Router => {
       return res.status(404).json({ message: 'Room not found' });
     }
     return res.json({ ok: true });
+  });
+
+  /**
+   * POST /:roomId/apply-zones
+   * Triggers room zone orchestration: assigns zones to sensors, translates
+   * coordinates per sensor placement, writes device-relative zones via HA.
+   * Requires HA write dependencies — returns 503 if unavailable.
+   */
+  router.post('/:roomId/apply-zones', async (req, res) => {
+    const room = storage.getRoom(req.params.roomId);
+    if (!room) {
+      return res.status(404).json({ message: 'Room not found' });
+    }
+
+    // No-op early return: room has no sensors or no zones
+    const hasSensors = (room.sensors?.length ?? 0) > 0;
+    const hasZones = (room.zones?.length ?? 0) > 0;
+    if (!hasSensors || !hasZones) {
+      return res.json({
+        ok: true,
+        results: [],
+        unassigned: [],
+        warnings: !hasSensors && hasZones ? ['No sensors attached — zones not written'] : [],
+      });
+    }
+
+    // Check HA dependencies are available
+    if (!deps?.writeClient || !deps?.profileLoader) {
+      return res.status(503).json({ message: 'Home Assistant connection not available' });
+    }
+
+    try {
+      const orchestrator = new RoomZoneOrchestrator({
+        writeClient: deps.writeClient,
+        deviceEntityService,
+        deviceMappingStorage,
+        profileLoader: deps.profileLoader,
+      });
+
+      const result = await orchestrator.applyRoomZones(room);
+
+      return res.json({
+        ok: result.results.every(r => r.writeResult.ok),
+        results: result.results.map(r => ({
+          deviceId: r.deviceId,
+          ok: r.writeResult.ok,
+          assignedZoneIds: r.assignedZoneIds,
+          failureCount: r.writeResult.failures.length,
+        })),
+        unassigned: result.unassigned,
+        warnings: result.warnings,
+      });
+    } catch (error) {
+      logger.error({ error, roomId: room.id }, 'Failed to apply room zones');
+      return res.status(500).json({ message: error instanceof Error ? error.message : 'Failed to apply room zones' });
+    }
   });
 
   return router;
