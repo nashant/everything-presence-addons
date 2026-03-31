@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "exported_at": "2026-03-31T10:53:07.112Z",
+  "exported_at": "2026-03-31T11:00:44.637Z",
   "milestones": [
     {
       "id": "M001",
@@ -1852,19 +1852,29 @@
       "milestone_id": "M004",
       "slice_id": "S02",
       "id": "T03",
-      "title": "Build RoomDeviceService and expose WsReadTransport.call() for downstream use",
-      "status": "pending",
-      "one_liner": "",
-      "narrative": "",
-      "verification_result": "",
+      "title": "Built RoomDeviceService orchestrating MQTT discovery for virtual HA room devices with 20 passing unit tests, and exposed WsReadTransport.call() on IHaReadTransport interface",
+      "status": "complete",
+      "one_liner": "Built RoomDeviceService orchestrating MQTT discovery for virtual HA room devices with 20 passing unit tests, and exposed WsReadTransport.call() on IHaReadTransport interface",
+      "narrative": "Created roomDeviceService.ts that accepts a RoomDeviceDescriptor and orchestrates MqttClient, discovery payload builder, and template generator to publish retained MQTT discovery messages for virtual HA room devices. Each zone gets a binary_sensor (occupancy with Jinja2 aggregation template) and sensor (max target count). For no_change_on_tie mode, selfEntityId is derived as binary_sensor.{unique_id} matching HA's entity_id derivation. removeRoomDevice publishes empty retained payloads to clear entities, getDiscoveryTopics returns all topics for debugging. Also made WsReadTransport.call() public, added it to IHaReadTransport interface, and added a throwing stub in RestReadTransport.",
+      "verification_result": "20/20 roomDeviceService tests pass. 79/79 total S02 tests pass across all 3 test files (discoveryPayload, templateGenerator, roomDeviceService). grep confirms WsReadTransport.call() is public. Slice-level verification: discoveryPayload tests pass, mqtt dependency confirmed in package.json.",
       "duration": "",
-      "completed_at": null,
+      "completed_at": "2026-03-31T11:00:44.627Z",
       "blocker_discovered": false,
-      "deviations": "",
-      "known_issues": "",
-      "key_files": [],
-      "key_decisions": [],
-      "full_summary_md": "",
+      "deviations": "None.",
+      "known_issues": "None.",
+      "key_files": [
+        "everything-presence-mmwave-configurator/backend/src/ha/roomDeviceService.ts",
+        "everything-presence-mmwave-configurator/backend/src/__tests__/unit/roomDeviceService.test.ts",
+        "everything-presence-mmwave-configurator/backend/src/ha/wsReadTransport.ts",
+        "everything-presence-mmwave-configurator/backend/src/ha/readTransport.ts",
+        "everything-presence-mmwave-configurator/backend/src/ha/restReadTransport.ts"
+      ],
+      "key_decisions": [
+        "selfEntityId for no_change_on_tie derived as binary_sensor.<unique_id> matching HA entity_id convention",
+        "sensor target count uses unit_of_measurement 'targets'",
+        "removeRoomDevice publishes entity empties before availability for clean HA removal ordering"
+      ],
+      "full_summary_md": "---\nid: T03\nparent: S02\nmilestone: M004\nkey_files:\n  - everything-presence-mmwave-configurator/backend/src/ha/roomDeviceService.ts\n  - everything-presence-mmwave-configurator/backend/src/__tests__/unit/roomDeviceService.test.ts\n  - everything-presence-mmwave-configurator/backend/src/ha/wsReadTransport.ts\n  - everything-presence-mmwave-configurator/backend/src/ha/readTransport.ts\n  - everything-presence-mmwave-configurator/backend/src/ha/restReadTransport.ts\nkey_decisions:\n  - selfEntityId for no_change_on_tie derived as binary_sensor.<unique_id> matching HA entity_id convention\n  - sensor target count uses unit_of_measurement 'targets'\n  - removeRoomDevice publishes entity empties before availability for clean HA removal ordering\nduration: \"\"\nverification_result: passed\ncompleted_at: 2026-03-31T11:00:44.627Z\nblocker_discovered: false\n---\n\n# T03: Built RoomDeviceService orchestrating MQTT discovery for virtual HA room devices with 20 passing unit tests, and exposed WsReadTransport.call() on IHaReadTransport interface\n\n**Built RoomDeviceService orchestrating MQTT discovery for virtual HA room devices with 20 passing unit tests, and exposed WsReadTransport.call() on IHaReadTransport interface**\n\n## What Happened\n\nCreated roomDeviceService.ts that accepts a RoomDeviceDescriptor and orchestrates MqttClient, discovery payload builder, and template generator to publish retained MQTT discovery messages for virtual HA room devices. Each zone gets a binary_sensor (occupancy with Jinja2 aggregation template) and sensor (max target count). For no_change_on_tie mode, selfEntityId is derived as binary_sensor.{unique_id} matching HA's entity_id derivation. removeRoomDevice publishes empty retained payloads to clear entities, getDiscoveryTopics returns all topics for debugging. Also made WsReadTransport.call() public, added it to IHaReadTransport interface, and added a throwing stub in RestReadTransport.\n\n## Verification\n\n20/20 roomDeviceService tests pass. 79/79 total S02 tests pass across all 3 test files (discoveryPayload, templateGenerator, roomDeviceService). grep confirms WsReadTransport.call() is public. Slice-level verification: discoveryPayload tests pass, mqtt dependency confirmed in package.json.\n\n## Verification Evidence\n\n| # | Command | Exit Code | Verdict | Duration |\n|---|---------|-----------|---------|----------|\n| 1 | `cd everything-presence-mmwave-configurator && npx vitest run backend/src/__tests__/unit/roomDeviceService.test.ts` | 0 | ✅ pass | 1700ms |\n| 2 | `cd everything-presence-mmwave-configurator && npx vitest run backend/src/__tests__/unit/discoveryPayload.test.ts backend/src/__tests__/unit/templateGenerator.test.ts backend/src/__tests__/unit/roomDeviceService.test.ts` | 0 | ✅ pass | 2500ms |\n| 3 | `grep 'public async call' everything-presence-mmwave-configurator/backend/src/ha/wsReadTransport.ts` | 0 | ✅ pass | 50ms |\n| 4 | `grep '\"mqtt\"' everything-presence-mmwave-configurator/package.json` | 0 | ✅ pass | 50ms |\n\n\n## Deviations\n\nNone.\n\n## Known Issues\n\nNone.\n\n## Files Created/Modified\n\n- `everything-presence-mmwave-configurator/backend/src/ha/roomDeviceService.ts`\n- `everything-presence-mmwave-configurator/backend/src/__tests__/unit/roomDeviceService.test.ts`\n- `everything-presence-mmwave-configurator/backend/src/ha/wsReadTransport.ts`\n- `everything-presence-mmwave-configurator/backend/src/ha/readTransport.ts`\n- `everything-presence-mmwave-configurator/backend/src/ha/restReadTransport.ts`\n",
       "description": "## Description\n\nCreate the room device service (`backend/src/ha/roomDeviceService.ts`) that orchestrates MQTT discovery to create/remove virtual HA room devices with zone entities. Also expose the private `call()` method on `WsReadTransport` so downstream slices (S04) can use it for template helper creation.\n\n**RoomDeviceService** takes an `MqttClient` (from T01) and uses the discovery payload builder (T01) + template generator (T02) to publish MQTT discovery messages that create:\n- A virtual device in HA identified by `ep_room_{roomId}`\n- One `binary_sensor` per zone with `value_template` containing the Jinja2 aggregation template\n- One `sensor` per zone for target count with `value_template` containing the max template\n\nThe service also handles cleanup by publishing empty payloads to the same config topics.\n\n**Input data model:** The service accepts a room descriptor (not the full RoomConfig — just the subset needed):\n```typescript\ninterface RoomDeviceDescriptor {\n  roomId: string;\n  roomName: string;\n  zones: Array<{\n    zoneId: string;\n    zoneName: string;\n    zoneIndex: number;\n    aggregationMode: AggregationMode;\n    coveringSensorEntities: {\n      occupancy: string[];  // e.g., ['binary_sensor.mock_ep_lite_1_zone_2_occupancy']\n      targetCount: string[]; // e.g., ['sensor.mock_ep_lite_1_zone_2_target_count']\n    };\n  }>;\n}\n```\n\nThis descriptor is what S04 will build from zone assignments + device profiles. For S02, we hardcode test data.\n\n**Methods:**\n- `async createRoomDevice(descriptor: RoomDeviceDescriptor): Promise<void>` — publishes availability 'online', then discovery messages for all zone entities\n- `async removeRoomDevice(roomId: string, zoneCount: number): Promise<void>` — publishes empty payloads to all config topics to remove entities, then removes availability\n- `getDiscoveryTopics(roomId: string, zoneCount: number): string[]` — returns all topics that would be published to (for inspection/debugging)\n\n**WsReadTransport exposure:** Make `call()` public (change `private` to `public` on line 407 of wsReadTransport.ts). This is a purely internal class — there's no external API contract to break. The method signature `call(command: Record<string, unknown>): Promise<unknown>` is already correct for arbitrary WS commands. S04 will use this for `config/template/create` and `config/entity_registry/update` commands.\n\n## Steps\n\n1. In `backend/src/ha/wsReadTransport.ts`, change `private async call(` to `public async call(` (line 407). Also add `call(command: Record<string, unknown>): Promise<unknown>` to the `IHaReadTransport` interface in `readTransport.ts`. For `RestReadTransport`, add a stub that throws `new Error('WS call() not available in REST mode')`.\n2. Create `backend/src/ha/roomDeviceService.ts`:\n   - Import `MqttClient`, discovery payload builders, and template generators\n   - Define `RoomDeviceDescriptor` interface (export it)\n   - Implement `createRoomDevice()`: iterate zones, build discovery payloads with generated templates, publish each with retain:true\n   - Implement `removeRoomDevice()`: publish empty string to each config topic (retain:true to remove retained message)\n   - Implement `getDiscoveryTopics()` for debugging\n   - Log room device operations with pino (room ID, zone count, topics published)\n3. Create `backend/src/__tests__/unit/roomDeviceService.test.ts`:\n   - Mock MqttClient (track publish calls)\n   - Test `createRoomDevice()` with a 2-zone room covered by 2 sensors:\n     - Verify correct number of publish calls (availability + N binary_sensors + N sensors)\n     - Verify each publish topic matches expected format\n     - Verify each payload contains correct value_template from template generator\n     - Verify all payloads share the same device identifiers\n   - Test `removeRoomDevice()` publishes empty payloads to correct topics\n   - Test `getDiscoveryTopics()` returns expected topic list\n   - Test with empty zones array (should publish only availability)\n4. Run tests: `npx vitest run src/__tests__/unit/roomDeviceService.test.ts`\n\n## Must-Haves\n\n- [ ] RoomDeviceService creates correct MQTT discovery messages for binary_sensor and sensor entities\n- [ ] All entities under one room share identical device identifiers\n- [ ] value_template contains Jinja2 from template generator\n- [ ] Cleanup publishes empty payloads to remove entities\n- [ ] WsReadTransport.call() is public and on the IHaReadTransport interface\n- [ ] RestReadTransport has a throwing stub for call()\n- [ ] Unit tests pass with mocked MQTT client\n\n## Verification\n\n- `cd everything-presence-mmwave-configurator && npx vitest run src/__tests__/unit/roomDeviceService.test.ts` — all tests pass\n- `grep 'public async call' everything-presence-mmwave-configurator/backend/src/ha/wsReadTransport.ts` confirms visibility change\n\n## Observability Impact\n\n- Signals added: pino logs for room device create/remove with room ID, zone count, topic list\n- How a future agent inspects this: `getDiscoveryTopics()` returns all topics for a room — can be used to verify against MQTT broker\n- Failure state exposed: publish failures logged with topic path\n\n## Failure Modes\n\n| Dependency | On error | On timeout | On malformed response |\n|------------|----------|-----------|----------------------|\n| MqttClient.publish() | Log + rethrow — caller decides retry strategy | mqtt.js QoS 1 has built-in retry; publish() rejects if client disconnected | N/A — we build the payload, not receive it |",
       "estimate": "1h",
       "files": [
@@ -2515,6 +2525,50 @@
       "verdict": "✅ pass",
       "duration_ms": 50,
       "created_at": "2026-03-31T10:53:07.099Z"
+    },
+    {
+      "id": 42,
+      "task_id": "T03",
+      "slice_id": "S02",
+      "milestone_id": "M004",
+      "command": "cd everything-presence-mmwave-configurator && npx vitest run backend/src/__tests__/unit/roomDeviceService.test.ts",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 1700,
+      "created_at": "2026-03-31T11:00:44.627Z"
+    },
+    {
+      "id": 43,
+      "task_id": "T03",
+      "slice_id": "S02",
+      "milestone_id": "M004",
+      "command": "cd everything-presence-mmwave-configurator && npx vitest run backend/src/__tests__/unit/discoveryPayload.test.ts backend/src/__tests__/unit/templateGenerator.test.ts backend/src/__tests__/unit/roomDeviceService.test.ts",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 2500,
+      "created_at": "2026-03-31T11:00:44.627Z"
+    },
+    {
+      "id": 44,
+      "task_id": "T03",
+      "slice_id": "S02",
+      "milestone_id": "M004",
+      "command": "grep 'public async call' everything-presence-mmwave-configurator/backend/src/ha/wsReadTransport.ts",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 50,
+      "created_at": "2026-03-31T11:00:44.627Z"
+    },
+    {
+      "id": 45,
+      "task_id": "T03",
+      "slice_id": "S02",
+      "milestone_id": "M004",
+      "command": "grep '\"mqtt\"' everything-presence-mmwave-configurator/package.json",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 50,
+      "created_at": "2026-03-31T11:00:44.627Z"
     }
   ]
 }

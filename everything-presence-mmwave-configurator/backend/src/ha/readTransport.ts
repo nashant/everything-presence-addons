@@ -172,6 +172,19 @@ export interface IHaReadTransport {
   unsubscribeAll(): void;
 
   // ─────────────────────────────────────────────────────────────────
+  // Arbitrary WS Commands
+  // ─────────────────────────────────────────────────────────────────
+
+  /**
+   * Send an arbitrary WebSocket command and return the result.
+   * Used for operations like config/template/create or
+   * config/entity_registry/update that don't have dedicated methods.
+   *
+   * In REST mode, this throws — the operation requires WebSocket.
+   */
+  call(command: Record<string, unknown>): Promise<unknown>;
+
+  // ─────────────────────────────────────────────────────────────────
   // Connection Management
   // ─────────────────────────────────────────────────────────────────
 

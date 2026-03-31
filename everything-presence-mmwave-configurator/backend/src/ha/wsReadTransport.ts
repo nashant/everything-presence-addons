@@ -404,7 +404,7 @@ export class WsReadTransport implements IHaReadTransport {
     this.socket.send(JSON.stringify(payload));
   }
 
-  private async call(command: Record<string, unknown>): Promise<unknown> {
+  public async call(command: Record<string, unknown>): Promise<unknown> {
     await this.waitUntilReady();
     const id = this.nextId++;
 

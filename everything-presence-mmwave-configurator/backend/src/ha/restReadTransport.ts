@@ -527,4 +527,8 @@ export class RestReadTransport implements IHaReadTransport {
 
     return false;
   }
+
+  async call(_command: Record<string, unknown>): Promise<unknown> {
+    throw new Error('WS call() not available in REST mode');
+  }
 }

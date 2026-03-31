@@ -138,7 +138,7 @@ The module needs no runtime dependencies — it takes entity ID strings and retu
   - Estimate: 45m
   - Files: everything-presence-mmwave-configurator/backend/src/ha/templateGenerator.ts, everything-presence-mmwave-configurator/backend/src/__tests__/unit/templateGenerator.test.ts
   - Verify: cd everything-presence-mmwave-configurator && npx vitest run src/__tests__/unit/templateGenerator.test.ts
-- [ ] **T03: Build RoomDeviceService and expose WsReadTransport.call() for downstream use** — ## Description
+- [x] **T03: Built RoomDeviceService orchestrating MQTT discovery for virtual HA room devices with 20 passing unit tests, and exposed WsReadTransport.call() on IHaReadTransport interface** — ## Description
 
 Create the room device service (`backend/src/ha/roomDeviceService.ts`) that orchestrates MQTT discovery to create/remove virtual HA room devices with zone entities. Also expose the private `call()` method on `WsReadTransport` so downstream slices (S04) can use it for template helper creation.
 
