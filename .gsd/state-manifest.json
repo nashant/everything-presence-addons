@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "exported_at": "2026-03-31T05:03:48.595Z",
+  "exported_at": "2026-03-31T05:07:08.180Z",
   "milestones": [
     {
       "id": "M001",
@@ -1198,19 +1198,24 @@
       "milestone_id": "M003",
       "slice_id": "S02",
       "id": "T04",
-      "title": "Wire RoomBuilderPage to build sensorPlacements from room.sensors[]",
-      "status": "pending",
-      "one_liner": "",
-      "narrative": "",
-      "verification_result": "",
+      "title": "Wired RoomBuilderPage to build sensorPlacements from room.sensors[] with drag persistence and badge update",
+      "status": "complete",
+      "one_liner": "Wired RoomBuilderPage to build sensorPlacements from room.sensors[] with drag persistence and badge update",
+      "narrative": "Added sensorPlacements useMemo that maps selectedRoom.sensors[] to SensorRenderInfo[] (with profile lookup for fov/range/icon and SENSOR_COLORS cycling), handleSensorChange/handleSensorSelect callbacks for drag persistence and selection, delegated onDeviceChange to handleSensorChange when multi-sensor mode is active, wired all three props to RoomCanvas, and updated the Devices sidebar badge to show sensors.length.",
+      "verification_result": "npx tsc --noEmit in frontend/ produces exactly 125 errors — the same pre-existing baseline. Zero new errors introduced. RoomBuilderPage imports SensorRenderInfo and SENSOR_COLORS from canvas/types. All prop wirings verified via grep.",
       "duration": "",
-      "completed_at": null,
+      "completed_at": "2026-03-31T05:07:08.163Z",
       "blocker_discovered": false,
-      "deviations": "",
-      "known_issues": "",
-      "key_files": [],
-      "key_decisions": [],
-      "full_summary_md": "",
+      "deviations": "None.",
+      "known_issues": "125 pre-existing TypeScript errors in frontend from prior milestones.",
+      "key_files": [
+        "everything-presence-mmwave-configurator/frontend/src/pages/RoomBuilderPage.tsx"
+      ],
+      "key_decisions": [
+        "Backward compat: devicePlacement synced from sensors[0].placement on every sensor drag update",
+        "sensorPlacements returns undefined (not empty array) when room.sensors is absent, preserving single-device fallback path"
+      ],
+      "full_summary_md": "---\nid: T04\nparent: S02\nmilestone: M003\nkey_files:\n  - everything-presence-mmwave-configurator/frontend/src/pages/RoomBuilderPage.tsx\nkey_decisions:\n  - Backward compat: devicePlacement synced from sensors[0].placement on every sensor drag update\n  - sensorPlacements returns undefined (not empty array) when room.sensors is absent, preserving single-device fallback path\nduration: \"\"\nverification_result: passed\ncompleted_at: 2026-03-31T05:07:08.163Z\nblocker_discovered: false\n---\n\n# T04: Wired RoomBuilderPage to build sensorPlacements from room.sensors[] with drag persistence and badge update\n\n**Wired RoomBuilderPage to build sensorPlacements from room.sensors[] with drag persistence and badge update**\n\n## What Happened\n\nAdded sensorPlacements useMemo that maps selectedRoom.sensors[] to SensorRenderInfo[] (with profile lookup for fov/range/icon and SENSOR_COLORS cycling), handleSensorChange/handleSensorSelect callbacks for drag persistence and selection, delegated onDeviceChange to handleSensorChange when multi-sensor mode is active, wired all three props to RoomCanvas, and updated the Devices sidebar badge to show sensors.length.\n\n## Verification\n\nnpx tsc --noEmit in frontend/ produces exactly 125 errors — the same pre-existing baseline. Zero new errors introduced. RoomBuilderPage imports SensorRenderInfo and SENSOR_COLORS from canvas/types. All prop wirings verified via grep.\n\n## Verification Evidence\n\n| # | Command | Exit Code | Verdict | Duration |\n|---|---------|-----------|---------|----------|\n| 1 | `cd everything-presence-mmwave-configurator/frontend && npx tsc --noEmit 2>&1 | grep '^src/' | wc -l` | 0 | ✅ pass (125 pre-existing, 0 new) | 4200ms |\n| 2 | `grep 'SensorRenderInfo|SENSOR_COLORS' src/pages/RoomBuilderPage.tsx` | 0 | ✅ pass (3 references) | 50ms |\n| 3 | `grep 'sensorPlacements|onSensorChange|onSensorSelect' src/pages/RoomBuilderPage.tsx | wc -l` | 0 | ✅ pass (10 references) | 50ms |\n\n\n## Deviations\n\nNone.\n\n## Known Issues\n\n125 pre-existing TypeScript errors in frontend from prior milestones.\n\n## Files Created/Modified\n\n- `everything-presence-mmwave-configurator/frontend/src/pages/RoomBuilderPage.tsx`\n",
       "description": "Connect backend sensors[] data to RoomCanvas multi-sensor rendering in RoomBuilderPage. Build SensorRenderInfo array from room config, handle drag updates, update Devices panel badge.\n\nSteps:\n1. In `frontend/src/pages/RoomBuilderPage.tsx`:\n   - Add `useMemo` that builds `SensorRenderInfo[]` from `selectedRoom.sensors`: for each sensor, look up profile from `profiles` array via `sensor.profileId`, extract `limits.fieldOfViewDegrees`, `limits.maxRangeMeters`, `iconUrl`. Assign color from `SENSOR_COLORS[index % SENSOR_COLORS.length]`. Default placement to room centroid if undefined.\n   - Pass `sensorPlacements` to `RoomCanvas` when `selectedRoom.sensors?.length > 0`\n   - Implement `onSensorChange` callback: find sensor in `selectedRoom.sensors` by id, update its placement, sync `devicePlacement` from `sensors[0].placement` for backward compat, call room update\n   - Implement `onSensorSelect` callback: set selectedItem to `{ type: 'device', id: sensorId }`\n   - Update existing `onDeviceChange` handler: when sensorPlacements is used, delegate to `onSensorChange`\n   - In Devices panel badge: show `selectedRoom.sensors?.length` instead of hardcoded '1'",
       "estimate": "45m",
       "files": [
@@ -1503,6 +1508,39 @@
       "verdict": "✅ pass (11 references)",
       "duration_ms": 50,
       "created_at": "2026-03-31T05:03:48.583Z"
+    },
+    {
+      "id": 12,
+      "task_id": "T04",
+      "slice_id": "S02",
+      "milestone_id": "M003",
+      "command": "cd everything-presence-mmwave-configurator/frontend && npx tsc --noEmit 2>&1 | grep '^src/' | wc -l",
+      "exit_code": 0,
+      "verdict": "✅ pass (125 pre-existing, 0 new)",
+      "duration_ms": 4200,
+      "created_at": "2026-03-31T05:07:08.163Z"
+    },
+    {
+      "id": 13,
+      "task_id": "T04",
+      "slice_id": "S02",
+      "milestone_id": "M003",
+      "command": "grep 'SensorRenderInfo|SENSOR_COLORS' src/pages/RoomBuilderPage.tsx",
+      "exit_code": 0,
+      "verdict": "✅ pass (3 references)",
+      "duration_ms": 50,
+      "created_at": "2026-03-31T05:07:08.163Z"
+    },
+    {
+      "id": 14,
+      "task_id": "T04",
+      "slice_id": "S02",
+      "milestone_id": "M003",
+      "command": "grep 'sensorPlacements|onSensorChange|onSensorSelect' src/pages/RoomBuilderPage.tsx | wc -l",
+      "exit_code": 0,
+      "verdict": "✅ pass (10 references)",
+      "duration_ms": 50,
+      "created_at": "2026-03-31T05:07:08.163Z"
     }
   ]
 }

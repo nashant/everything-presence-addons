@@ -47,7 +47,7 @@ RoomCanvas changes (frontend/src/components/RoomCanvas.tsx):
   - Estimate: 1h 15m
   - Files: frontend/src/components/canvas/DeviceItemRenderer.tsx, frontend/src/components/RoomCanvas.tsx
   - Verify: cd everything-presence-mmwave-configurator && npx tsc --noEmit — no new errors. Existing callers (ZoneEditorPage, WizardPage, LiveTrackingPage) that don't pass sensorPlacements still compile.
-- [ ] **T04: Wire RoomBuilderPage to build sensorPlacements from room.sensors[]** — Connect backend sensors[] data to RoomCanvas multi-sensor rendering in RoomBuilderPage. Build SensorRenderInfo array from room config, handle drag updates, update Devices panel badge.
+- [x] **T04: Wired RoomBuilderPage to build sensorPlacements from room.sensors[] with drag persistence and badge update** — Connect backend sensors[] data to RoomCanvas multi-sensor rendering in RoomBuilderPage. Build SensorRenderInfo array from room config, handle drag updates, update Devices panel badge.
 
 Steps:
 1. In `frontend/src/pages/RoomBuilderPage.tsx`:

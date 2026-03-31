@@ -2,7 +2,8 @@ import React, { useCallback, useEffect, useMemo, useState, useRef } from 'react'
 import { fetchDevices, fetchProfiles, ingressAware } from '../api/client';
 import { fetchRooms, updateRoom } from '../api/rooms';
 import { RoomCanvas, type CanvasItemType } from '../components/RoomCanvas';
-import { DiscoveredDevice, DeviceProfile, RoomConfig, LiveState, FurnitureInstance, FurnitureType, Door, Zone, ZoneRect, ZonePolygon, isZoneRect, isZonePolygon } from '../api/types';
+import { DiscoveredDevice, DeviceProfile, RoomConfig, LiveState, FurnitureInstance, FurnitureType, Door, Zone, ZoneRect, ZonePolygon, isZoneRect, isZonePolygon, DevicePlacement } from '../api/types';
+import { SensorRenderInfo, SENSOR_COLORS } from '../components/canvas/types';
 import { useWallDrawing } from '../hooks/useWallDrawing';
 import { FurnitureLibrary } from '../components/FurnitureLibrary';
 import { FurnitureEditor } from '../components/FurnitureEditor';
@@ -134,6 +135,28 @@ export const RoomBuilderPage: React.FC<RoomBuilderPageProps> = ({
     [devices, selectedRoom?.deviceId],
   );
 
+  // Build SensorRenderInfo[] from room.sensors for multi-sensor canvas rendering
+  const sensorPlacements: SensorRenderInfo[] | undefined = useMemo(() => {
+    if (!selectedRoom?.sensors?.length) return undefined;
+    const centroid = selectedRoom.roomShell?.points?.length
+      ? computeCentroid(selectedRoom.roomShell.points)
+      : { x: 0, y: 0 };
+
+    return selectedRoom.sensors.map((sensor, index) => {
+      const profile = sensor.profileId
+        ? profiles.find((p) => p.id === sensor.profileId)
+        : null;
+      return {
+        id: sensor.deviceId,
+        placement: sensor.placement ?? { x: centroid.x, y: centroid.y, rotationDeg: 0 },
+        fovDeg: profile?.limits?.fieldOfViewDegrees ?? 120,
+        maxRangeMeters: profile?.limits?.maxRangeMeters ?? 6,
+        iconUrl: profile?.iconUrl,
+        color: SENSOR_COLORS[index % SENSOR_COLORS.length],
+      };
+    });
+  }, [selectedRoom?.sensors, selectedRoom?.roomShell?.points, profiles]);
+
   const selectedFurniture = useMemo(
     () => (selectedFurnitureId ? selectedRoom?.furniture?.find((f) => f.id === selectedFurnitureId) ?? null : null),
     [selectedFurnitureId, selectedRoom?.furniture],
@@ -221,6 +244,29 @@ export const RoomBuilderPage: React.FC<RoomBuilderPageProps> = ({
       setApplyingInstallationAngle(false);
     }
   }, [selectedRoom?.deviceId, rotationSuggestion, resolveInstallationAngleEntityId]);
+
+  // Multi-sensor change handler: updates a sensor's placement and syncs devicePlacement from sensors[0]
+  const handleSensorChange = useCallback((sensorId: string, placement: DevicePlacement) => {
+    if (!selectedRoom?.sensors) return;
+    const updatedSensors = selectedRoom.sensors.map((s) =>
+      s.deviceId === sensorId ? { ...s, placement } : s,
+    );
+    // Backward compat: keep devicePlacement in sync with sensors[0]
+    const firstPlacement = updatedSensors[0]?.placement;
+    const nextRoom: RoomConfig = {
+      ...selectedRoom,
+      sensors: updatedSensors,
+      ...(firstPlacement ? { devicePlacement: firstPlacement } : {}),
+    };
+    setRooms((prev) => prev.map((r) => (r.id === selectedRoom.id ? nextRoom : r)));
+  }, [selectedRoom]);
+
+  // Multi-sensor select handler
+  const handleSensorSelect = useCallback((sensorId: string) => {
+    setSelectedItem({ type: 'device', id: sensorId });
+    setActiveSection('devices');
+    setShowDeviceEditor(true);
+  }, []);
 
   const handlePointsChange = useCallback((nextPoints: { x: number; y: number }[]) => {
     if (!selectedRoom) return;
@@ -1072,7 +1118,7 @@ export const RoomBuilderPage: React.FC<RoomBuilderPageProps> = ({
   const zoneCount = selectedRoom?.zones?.length ?? 0;
 
   const sidebarSections: SectionDef[] = [
-    { id: 'devices', icon: '📡', label: 'Devices', badge: hasDevice ? '1' : undefined },
+    { id: 'devices', icon: '📡', label: 'Devices', badge: (selectedRoom?.sensors?.length ?? (hasDevice ? 1 : 0)) > 0 ? `${selectedRoom?.sensors?.length ?? 1}` : undefined },
     { id: 'zones', icon: '📐', label: 'Zones', badge: zoneCount > 0 ? `${zoneCount}` : undefined },
     { id: 'walls', icon: '🧱', label: 'Walls', badge: wallCount > 0 ? `${wallCount}` : undefined },
     { id: 'doors', icon: '🚪', label: 'Doors', badge: doorCount > 0 ? `${doorCount}` : undefined },
@@ -1313,9 +1359,17 @@ export const RoomBuilderPage: React.FC<RoomBuilderPageProps> = ({
                   onItemSelect={handleItemSelect}
                   onDeviceChange={activeSection === 'devices' ? (placement) => {
                     if (!selectedRoom) return;
+                    // When multi-sensor mode is active, delegate to first sensor
+                    if (sensorPlacements && sensorPlacements.length > 0 && selectedRoom.sensors?.length) {
+                      handleSensorChange(selectedRoom.sensors[0].deviceId, placement);
+                      return;
+                    }
                     const nextRoom: RoomConfig = { ...selectedRoom, devicePlacement: placement };
                     setRooms((prev) => prev.map((r) => (r.id === selectedRoom.id ? nextRoom : r)));
                   } : undefined}
+                  sensorPlacements={sensorPlacements}
+                  onSensorChange={activeSection === 'devices' ? handleSensorChange : undefined}
+                  onSensorSelect={handleSensorSelect}
                   fieldOfViewDeg={selectedProfile?.limits?.fieldOfViewDegrees}
                   maxRangeMeters={selectedProfile?.limits?.maxRangeMeters}
                   deviceIconUrl={selectedProfile?.iconUrl}
