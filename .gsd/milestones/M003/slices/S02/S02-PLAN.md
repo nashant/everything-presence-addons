@@ -63,7 +63,7 @@ Steps:
 - [x] **T05: Browser verification — multi-sensor rendering end-to-end** — 
   - Files: none (verification only)
   - Verify: All checks pass in browser + TypeScript clean
-- [ ] **T06: Browser verification — multi-sensor rendering on correct codebase** — Full end-to-end verification that multi-sensor rendering works on the correct room-first codebase with M003/S01 backend sensors support.
+- [x] **T06: Fixed showDevice condition and api/rooms import path, verified two colored radar cones render in multi-sensor room with no regression in single-device rooms** — Full end-to-end verification that multi-sensor rendering works on the correct room-first codebase with M003/S01 backend sensors support.
 
 Steps:
 1. Start backend + frontend dev servers (using dev docker compose or direct npm run dev)

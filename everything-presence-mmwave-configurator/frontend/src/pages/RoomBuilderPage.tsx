@@ -1431,7 +1431,7 @@ export const RoomBuilderPage: React.FC<RoomBuilderPageProps> = ({
                   showWalls={showWalls}
                   showFurniture={showFurniture}
                   showDoors={showDoors}
-                  showDevice={showDeviceIcon && !!selectedRoom.deviceId}
+                  showDevice={showDeviceIcon && (!!selectedRoom.deviceId || (selectedRoom.sensors?.length ?? 0) > 0)}
                   renderOverlay={({ toCanvas }) => {
                     if (!showTargets || !targetPositions?.length) return null;
 

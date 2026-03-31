@@ -1,4 +1,4 @@
-import { RoomConfig } from '../types';
+import { RoomConfig } from './types';
 import { ingressAware } from './client';
 
 const handle = async <T>(res: Response): Promise<T> => {
