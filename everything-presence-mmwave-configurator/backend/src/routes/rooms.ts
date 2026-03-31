@@ -3,8 +3,11 @@ import { v4 as uuidv4 } from 'uuid';
 import { storage } from '../config/storage';
 import { DevicePlacement, Door, EntityMappings, FurnitureInstance, RoomConfig, RoomShell, SensorAttachment, Zone, ZoneRect, ZonePolygon, ZoneEntitySet, TargetEntitySet } from '../domain/types';
 import type { IHaWriteClient } from '../ha/writeClient';
+import type { IHaReadTransport } from '../ha/readTransport';
 import type { DeviceProfileLoader } from '../domain/deviceProfiles';
 import { RoomZoneOrchestrator } from '../domain/roomZoneOrchestrator';
+import { createOrUpdateRoomDevice, removeRoomDevice } from '../domain/roomDeviceLifecycle';
+import { RoomDeviceService } from '../ha/roomDeviceService';
 import { deviceEntityService } from '../domain/deviceEntityService';
 import { deviceMappingStorage } from '../config/deviceMappingStorage';
 import { logger } from '../logger';
@@ -12,6 +15,8 @@ import { logger } from '../logger';
 export interface RoomsRouterDependencies {
   writeClient: IHaWriteClient;
   profileLoader: DeviceProfileLoader;
+  mqttClient?: import('../ha/mqttClient').MqttClient;
+  readTransport?: IHaReadTransport;
 }
 
 export const createRoomsRouter = (deps?: RoomsRouterDependencies): Router => {
@@ -368,7 +373,23 @@ export const createRoomsRouter = (deps?: RoomsRouterDependencies): Router => {
     return res.json({ room: updated });
   });
 
-  router.delete('/:id', (req, res) => {
+  router.delete('/:id', async (req, res) => {
+    const room = storage.getRoom(req.params.id);
+    if (!room) {
+      return res.status(404).json({ message: 'Room not found' });
+    }
+
+    // Clean up room device via MQTT before deleting from storage
+    if (deps?.mqttClient) {
+      try {
+        const roomDeviceService = new RoomDeviceService(deps.mqttClient);
+        await removeRoomDevice(room, { roomDeviceService });
+      } catch (err) {
+        // Cleanup failure is non-fatal — log warning and continue with deletion
+        logger.warn({ err, roomId: room.id }, 'Failed to remove room device during deletion — continuing');
+      }
+    }
+
     const removed = storage.deleteRoom(req.params.id);
     if (!removed) {
       return res.status(404).json({ message: 'Room not found' });
@@ -415,6 +436,22 @@ export const createRoomsRouter = (deps?: RoomsRouterDependencies): Router => {
 
       const result = await orchestrator.applyRoomZones(room);
 
+      // Room device lifecycle: create/update virtual HA device after successful zone writes
+      let roomDevice: { created: boolean; warnings: string[] } | null = null;
+      if (deps.mqttClient) {
+        try {
+          const roomDeviceService = new RoomDeviceService(deps.mqttClient);
+          roomDevice = await createOrUpdateRoomDevice(room, result.assignments, {
+            roomDeviceService,
+            entityResolver: deviceEntityService,
+          });
+        } catch (err) {
+          // Room device creation failure is non-fatal — zone writes already succeeded
+          logger.error({ err, roomId: room.id }, 'Failed to create/update room device');
+          roomDevice = { created: false, warnings: [`Room device creation failed: ${err instanceof Error ? err.message : String(err)}`] };
+        }
+      }
+
       return res.json({
         ok: result.results.every(r => r.writeResult.ok),
         results: result.results.map(r => ({
@@ -425,6 +462,7 @@ export const createRoomsRouter = (deps?: RoomsRouterDependencies): Router => {
         })),
         unassigned: result.unassigned,
         warnings: result.warnings,
+        roomDevice,
       });
     } catch (error) {
       logger.error({ error, roomId: room.id }, 'Failed to apply room zones');

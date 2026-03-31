@@ -4,6 +4,7 @@ import { loadConfig, redactedHaConfig } from './config';
 import { logger } from './logger';
 import { createServer, TransportStatus } from './server';
 import { HaWriteClient } from './ha/writeClient';
+import { MqttClient } from './ha/mqttClient';
 import { createReadTransport, TransportFactoryResult } from './ha/transportFactory';
 import { DeviceProfileLoader } from './domain/deviceProfiles';
 import { createLiveWebSocketServer } from './routes/liveWs';
@@ -60,6 +61,21 @@ const start = async () => {
       path.resolve(process.cwd(), 'config/device-profiles'),
     );
 
+    // 4. Initialize MQTT client (optional — needed for room device lifecycle)
+    let mqttClient: MqttClient | undefined;
+    if (config.mqtt) {
+      try {
+        mqttClient = new MqttClient(config.mqtt);
+        await mqttClient.connect();
+        logger.info({ brokerUrl: config.mqtt.brokerUrl }, 'MQTT client connected for room device lifecycle');
+      } catch (err) {
+        logger.error({ err, brokerUrl: config.mqtt.brokerUrl }, 'Failed to connect MQTT client — room device lifecycle will be unavailable');
+        mqttClient = undefined;
+      }
+    } else {
+      logger.info('No MQTT config — room device lifecycle will be unavailable');
+    }
+
     // Build transport status for API exposure
     const transportStatus: TransportStatus = {
       readTransport: activeTransport,
@@ -68,24 +84,25 @@ const start = async () => {
       restAvailable,
     };
 
-    // 4. Create Express app with dependencies
+    // 5. Create Express app with dependencies
     const app = createServer(config, {
       readTransport,
       writeClient,
       profileLoader,
       transportStatus,
+      mqttClient,
     });
 
-    // 5. Create HTTP server
+    // 6. Create HTTP server
     const httpServer = http.createServer(app);
 
-    // 6. Attach WebSocket server for live tracking (frontend connections)
+    // 7. Attach WebSocket server for live tracking (frontend connections)
     createLiveWebSocketServer(httpServer, readTransport, profileLoader);
 
-    // 7. Start LAN Firmware Server (separate port for device firmware downloads)
+    // 8. Start LAN Firmware Server (separate port for device firmware downloads)
     createLanFirmwareServer(config.firmware.lanPort);
 
-    // 8. Start main server listening
+    // 9. Start main server listening
     httpServer.listen(config.port, () => {
       logger.info(
         {

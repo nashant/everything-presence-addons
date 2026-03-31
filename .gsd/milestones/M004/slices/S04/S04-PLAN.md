@@ -88,7 +88,7 @@
   - Estimate: 1h30m
   - Files: everything-presence-mmwave-configurator/backend/src/domain/roomDeviceLifecycle.ts, everything-presence-mmwave-configurator/backend/src/__tests__/unit/roomDeviceLifecycle.test.ts
   - Verify: cd everything-presence-mmwave-configurator && npx vitest run backend/src/__tests__/unit/roomDeviceLifecycle.test.ts
-- [ ] **T03: Wire MqttClient into server and integrate lifecycle into routes** — Connect the lifecycle orchestrator to the running server: instantiate MqttClient at startup, extend RoomsRouterDependencies, hook room device creation into the apply-zones flow, and add cleanup to the DELETE route.
+- [x] **T03: Wired MqttClient into server startup and integrated room device lifecycle into apply-zones and DELETE routes** — Connect the lifecycle orchestrator to the running server: instantiate MqttClient at startup, extend RoomsRouterDependencies, hook room device creation into the apply-zones flow, and add cleanup to the DELETE route.
 
 ## Steps
 

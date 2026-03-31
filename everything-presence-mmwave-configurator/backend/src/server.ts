@@ -36,6 +36,7 @@ export interface ServerDependencies {
   writeClient: IHaWriteClient;
   profileLoader: DeviceProfileLoader;
   transportStatus: TransportStatus;
+  mqttClient?: import('./ha/mqttClient').MqttClient;
 }
 
 export const createServer = (config: AppConfig, deps?: ServerDependencies): express.Express => {
@@ -52,7 +53,7 @@ export const createServer = (config: AppConfig, deps?: ServerDependencies): expr
 
   app.use('/api/meta', createMetaRouter(config, deps?.transportStatus));
   const roomsDeps: RoomsRouterDependencies | undefined = deps
-    ? { writeClient: deps.writeClient, profileLoader: deps.profileLoader }
+    ? { writeClient: deps.writeClient, profileLoader: deps.profileLoader, mqttClient: deps.mqttClient, readTransport: deps.readTransport }
     : undefined;
   app.use('/api/rooms', createRoomsRouter(roomsDeps));
   app.use('/api/floors', createFloorsRouter());

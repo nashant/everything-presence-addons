@@ -71,6 +71,7 @@ export interface DeviceWriteResult {
 /** Complete orchestration result. */
 export interface OrchestratorResult {
   results: DeviceWriteResult[];
+  assignments: ZoneAssignment[];
   unassigned: UnassignedZone[];
   warnings: string[];
 }
@@ -166,7 +167,7 @@ export class RoomZoneOrchestrator {
     // Empty room early returns
     if (zones.length === 0) {
       logger.info({ roomId: room.id }, 'No zones to apply');
-      return { results: [], unassigned: [], warnings: [] };
+      return { results: [], assignments: [], unassigned: [], warnings: [] };
     }
 
     if (sensors.length === 0) {
@@ -175,7 +176,7 @@ export class RoomZoneOrchestrator {
         zoneId: z.id,
         reason: 'No sensors available',
       }));
-      return { results: [], unassigned, warnings: [] };
+      return { results: [], assignments: [], unassigned, warnings: [] };
     }
 
     // Step 1: Resolve sensor profiles
@@ -193,7 +194,7 @@ export class RoomZoneOrchestrator {
         zoneId: z.id,
         reason: 'No resolvable sensors',
       }));
-      return { results: [], unassigned, warnings };
+      return { results: [], assignments: [], unassigned, warnings };
     }
 
     // Step 2: Compute coverage matrix
@@ -307,6 +308,7 @@ export class RoomZoneOrchestrator {
 
     return {
       results,
+      assignments: assignmentResult.assignments,
       unassigned: assignmentResult.unassigned,
       warnings,
     };

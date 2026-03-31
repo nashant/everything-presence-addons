@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "taskId": "T02",
+  "unitId": "M004/S04/T02",
+  "timestamp": 1774971198511,
+  "passed": true,
+  "discoverySource": "task-plan",
+  "checks": [
+    {
+      "command": "cd everything-presence-mmwave-configurator",
+      "exitCode": 0,
+      "durationMs": 5,
+      "verdict": "pass"
+    },
+    {
+      "command": "npx vitest run backend/src/__tests__/unit/roomDeviceLifecycle.test.ts",
+      "exitCode": 0,
+      "durationMs": 1316,
+      "verdict": "pass"
+    }
+  ]
+}

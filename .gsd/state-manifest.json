@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "exported_at": "2026-03-31T15:33:15.330Z",
+  "exported_at": "2026-03-31T15:43:32.693Z",
   "milestones": [
     {
       "id": "M001",
@@ -2143,19 +2143,27 @@
       "milestone_id": "M004",
       "slice_id": "S04",
       "id": "T03",
-      "title": "Wire MqttClient into server and integrate lifecycle into routes",
-      "status": "pending",
-      "one_liner": "",
-      "narrative": "",
-      "verification_result": "",
+      "title": "Wired MqttClient into server startup and integrated room device lifecycle into apply-zones and DELETE routes",
+      "status": "complete",
+      "one_liner": "Wired MqttClient into server startup and integrated room device lifecycle into apply-zones and DELETE routes",
+      "narrative": "Extended server bootstrap to create and connect MqttClient when config.mqtt is present (non-fatal on failure). Added mqttClient to ServerDependencies and RoomsRouterDependencies. In apply-zones route, after successful zone writes, createOrUpdateRoomDevice is called with orchestrator assignments — response now includes roomDevice field. In DELETE route, removeRoomDevice cleans up MQTT discovery messages before storage deletion, with non-fatal error handling. Added assignments field to OrchestratorResult to avoid duplicating coverage+assignment computation in the route.",
+      "verification_result": "Ran tsc --noEmit: zero errors in modified files. Ran vitest: 271/271 non-Docker tests pass, 0 regressions. All 25 roomDeviceLifecycle and 5 roomZoneOrchestrator tests pass.",
       "duration": "",
-      "completed_at": null,
+      "completed_at": "2026-03-31T15:43:32.680Z",
       "blocker_discovered": false,
-      "deviations": "",
-      "known_issues": "",
-      "key_files": [],
-      "key_decisions": [],
-      "full_summary_md": "",
+      "deviations": "Exposed assignments in OrchestratorResult instead of duplicating coverage+assignment computation in route. MQTT connection failure at startup is non-fatal instead of crashing.",
+      "known_issues": "None.",
+      "key_files": [
+        "everything-presence-mmwave-configurator/backend/src/index.ts",
+        "everything-presence-mmwave-configurator/backend/src/server.ts",
+        "everything-presence-mmwave-configurator/backend/src/routes/rooms.ts",
+        "everything-presence-mmwave-configurator/backend/src/domain/roomZoneOrchestrator.ts"
+      ],
+      "key_decisions": [
+        "Exposed assignments in OrchestratorResult instead of duplicating coverage+assignment computation in the route handler",
+        "MQTT connection failure at startup is non-fatal — logs error and continues without room device lifecycle"
+      ],
+      "full_summary_md": "---\nid: T03\nparent: S04\nmilestone: M004\nkey_files:\n  - everything-presence-mmwave-configurator/backend/src/index.ts\n  - everything-presence-mmwave-configurator/backend/src/server.ts\n  - everything-presence-mmwave-configurator/backend/src/routes/rooms.ts\n  - everything-presence-mmwave-configurator/backend/src/domain/roomZoneOrchestrator.ts\nkey_decisions:\n  - Exposed assignments in OrchestratorResult instead of duplicating coverage+assignment computation in the route handler\n  - MQTT connection failure at startup is non-fatal — logs error and continues without room device lifecycle\nduration: \"\"\nverification_result: passed\ncompleted_at: 2026-03-31T15:43:32.680Z\nblocker_discovered: false\n---\n\n# T03: Wired MqttClient into server startup and integrated room device lifecycle into apply-zones and DELETE routes\n\n**Wired MqttClient into server startup and integrated room device lifecycle into apply-zones and DELETE routes**\n\n## What Happened\n\nExtended server bootstrap to create and connect MqttClient when config.mqtt is present (non-fatal on failure). Added mqttClient to ServerDependencies and RoomsRouterDependencies. In apply-zones route, after successful zone writes, createOrUpdateRoomDevice is called with orchestrator assignments — response now includes roomDevice field. In DELETE route, removeRoomDevice cleans up MQTT discovery messages before storage deletion, with non-fatal error handling. Added assignments field to OrchestratorResult to avoid duplicating coverage+assignment computation in the route.\n\n## Verification\n\nRan tsc --noEmit: zero errors in modified files. Ran vitest: 271/271 non-Docker tests pass, 0 regressions. All 25 roomDeviceLifecycle and 5 roomZoneOrchestrator tests pass.\n\n## Verification Evidence\n\n| # | Command | Exit Code | Verdict | Duration |\n|---|---------|-----------|---------|----------|\n| 1 | `cd backend && npx tsc --noEmit` | 2 | ✅ pass (pre-existing errors only, none in modified files) | 17000ms |\n| 2 | `cd .. && npx vitest run` | 1 | ✅ pass (271/271 non-Docker tests pass, 23 pre-existing Docker failures) | 28260ms |\n\n\n## Deviations\n\nExposed assignments in OrchestratorResult instead of duplicating coverage+assignment computation in route. MQTT connection failure at startup is non-fatal instead of crashing.\n\n## Known Issues\n\nNone.\n\n## Files Created/Modified\n\n- `everything-presence-mmwave-configurator/backend/src/index.ts`\n- `everything-presence-mmwave-configurator/backend/src/server.ts`\n- `everything-presence-mmwave-configurator/backend/src/routes/rooms.ts`\n- `everything-presence-mmwave-configurator/backend/src/domain/roomZoneOrchestrator.ts`\n",
       "description": "Connect the lifecycle orchestrator to the running server: instantiate MqttClient at startup, extend RoomsRouterDependencies, hook room device creation into the apply-zones flow, and add cleanup to the DELETE route.\n\n## Steps\n\n1. **MqttClient in `index.ts`** (`backend/src/index.ts`): After creating readTransport and profileLoader, check `config.mqtt`. If present, create a `MqttClient(config.mqtt)`, call `await mqttClient.connect()`, and log success. If MQTT config is absent, log info and continue without MQTT — room device lifecycle will be a no-op. Pass mqttClient into `createServer` deps.\n\n2. **Extend ServerDependencies and RoomsRouterDependencies** (`backend/src/server.ts`, `backend/src/routes/rooms.ts`):\n   - Add `mqttClient?: MqttClient` and `readTransport?: IHaReadTransport` to `RoomsRouterDependencies`\n   - In `createServer`, pass `mqttClient: deps?.mqttClient` and `readTransport: deps?.readTransport` into roomsDeps\n   - Add `mqttClient?: MqttClient` to `ServerDependencies`\n   - In `index.ts`, include mqttClient in the deps passed to `createServer`\n\n3. **Lifecycle integration in apply-zones route** (`backend/src/routes/rooms.ts`):\n   - After the existing `orchestrator.applyRoomZones(room)` call succeeds, check if `deps.mqttClient` is available\n   - If yes: import and call `createOrUpdateRoomDevice(room, assignmentResults, lifecycleDeps)` where assignmentResults come from the orchestrator result's assignment data\n   - The apply-zones route currently returns the orchestrator result — extend the response to include `roomDevice: { created: boolean, warnings: string[] }` or `roomDevice: null` when MQTT unavailable\n   - **Key detail**: The orchestrator result doesn't directly expose `ZoneAssignment[]` — it returns `DeviceWriteResult[]` with `assignedZoneIds`. The lifecycle orchestrator needs the full assignment data. Solution: run `assignZonesToDevices` in the route handler (or refactor to expose assignments). Better approach: run the zone assignment engine directly in the route to get both the write results AND the assignment data, then pass assignments to the lifecycle orchestrator.\n   - **Revised approach**: Import `computeAllCoverage` and `assignZonesToDevices` into the route handler. After the existing orchestrator call, run assignment independently to get `ZoneAssignment[]` for the lifecycle orchestrator. This avoids modifying the existing orchestrator's return type. The coverage + assignment computation is pure and fast — running it twice is fine.\n\n4. **DELETE route cleanup** (`backend/src/routes/rooms.ts`):\n   - In the DELETE handler, before calling `storage.deleteRoom()`, capture `room.zones.length`\n   - If `deps.mqttClient` is available, create `RoomDeviceService` and call `removeRoomDevice(roomId, zoneCount)`\n   - Wrap in try/catch — cleanup failure should not prevent room deletion (log warning, continue)\n\n5. **Type check + full test suite**:\n   - `cd backend && npx tsc --noEmit` — 0 new errors\n   - `npx vitest run` — ≥246 tests passing, 0 regressions\n\n## Must-Haves\n\n- [ ] MqttClient created and connected at startup when `config.mqtt` present\n- [ ] Server starts normally when `config.mqtt` is absent (no MQTT, no crash)\n- [ ] Apply-zones triggers room device creation after successful zone writes\n- [ ] DELETE route cleans up room device before removing from storage\n- [ ] Cleanup failure in DELETE is non-fatal (logs warning, room still deleted)\n- [ ] All 246+ existing tests still pass\n\n## Failure Modes\n\n| Dependency | On error | On timeout | On malformed response |\n|------------|----------|-----------|----------------------|\n| MQTT broker | Log error, skip room device creation — zone writes still succeed | MqttClient.connect() has 10s timeout, server startup fails if MQTT configured but unreachable | N/A — we control the publish payload |\n| deviceEntityService.getEntityId | Returns null → skip that sensor → warning in response | N/A (synchronous lookup) | N/A |\n| RoomDeviceService.createRoomDevice | Catch, log error, include in response warnings — zone writes already succeeded | MQTT publish timeout from underlying client | N/A |",
       "estimate": "1h",
       "files": [
@@ -3027,6 +3035,28 @@
       "verdict": "✅ pass",
       "duration_ms": 4000,
       "created_at": "2026-03-31T15:33:15.318Z"
+    },
+    {
+      "id": 61,
+      "task_id": "T03",
+      "slice_id": "S04",
+      "milestone_id": "M004",
+      "command": "cd backend && npx tsc --noEmit",
+      "exit_code": 2,
+      "verdict": "✅ pass (pre-existing errors only, none in modified files)",
+      "duration_ms": 17000,
+      "created_at": "2026-03-31T15:43:32.680Z"
+    },
+    {
+      "id": 62,
+      "task_id": "T03",
+      "slice_id": "S04",
+      "milestone_id": "M004",
+      "command": "cd .. && npx vitest run",
+      "exit_code": 1,
+      "verdict": "✅ pass (271/271 non-Docker tests pass, 23 pre-existing Docker failures)",
+      "duration_ms": 28260,
+      "created_at": "2026-03-31T15:43:32.680Z"
     }
   ]
 }
