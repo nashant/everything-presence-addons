@@ -27,7 +27,7 @@
   - Estimate: 20m
   - Files: everything-presence-mmwave-configurator/backend/src/domain/types.ts, everything-presence-mmwave-configurator/frontend/src/api/types.ts, everything-presence-mmwave-configurator/backend/src/routes/rooms.ts
   - Verify: cd everything-presence-mmwave-configurator/backend && npx tsc --noEmit && cd ../frontend && npx tsc --noEmit
-- [ ] **T02: Build room device lifecycle orchestrator with unit tests** — Create the core service that bridges S03's zone assignment results with S02's RoomDeviceService. The lifecycle orchestrator takes a RoomConfig + zone assignments, resolves per-device zone entity IDs, builds a `RoomDeviceDescriptor`, and calls `createRoomDevice()`. This is the riskiest piece of S04 — all integration logic lives here.
+- [x] **T02: Built roomDeviceLifecycle service bridging zone assignments to RoomDeviceService, with 25 passing unit tests** — Create the core service that bridges S03's zone assignment results with S02's RoomDeviceService. The lifecycle orchestrator takes a RoomConfig + zone assignments, resolves per-device zone entity IDs, builds a `RoomDeviceDescriptor`, and calls `createRoomDevice()`. This is the riskiest piece of S04 — all integration logic lives here.
 
 ## Steps
 

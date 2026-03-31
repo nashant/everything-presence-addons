@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "exported_at": "2026-03-31T15:29:25.169Z",
+  "exported_at": "2026-03-31T15:33:15.330Z",
   "milestones": [
     {
       "id": "M001",
@@ -2097,19 +2097,25 @@
       "milestone_id": "M004",
       "slice_id": "S04",
       "id": "T02",
-      "title": "Build room device lifecycle orchestrator with unit tests",
-      "status": "pending",
-      "one_liner": "",
-      "narrative": "",
-      "verification_result": "",
+      "title": "Built roomDeviceLifecycle service bridging zone assignments to RoomDeviceService, with 25 passing unit tests",
+      "status": "complete",
+      "one_liner": "Built roomDeviceLifecycle service bridging zone assignments to RoomDeviceService, with 25 passing unit tests",
+      "narrative": "Created roomDeviceLifecycle.ts with deriveEntityKeys (pure slot→entity key mapping), buildRoomDeviceDescriptor (pure function grouping multi-sensor assignments by room zone and resolving entity IDs via IEntityResolver), and createOrUpdateRoomDevice/removeRoomDevice async wrappers. Simplified dependency interface to IEntityResolver with just getEntityId instead of the plan's broader deps. 25 unit tests cover all must-haves: single/multi zone+sensor combos, aggregation mode defaults and overrides, label fallback, missing entity warnings, exclusion/entry slot filtering, 0-based zone indices, error propagation, and edge cases.",
+      "verification_result": "Ran vitest: 25/25 tests pass. Ran tsc --noEmit on backend: no errors in new files.",
       "duration": "",
-      "completed_at": null,
+      "completed_at": "2026-03-31T15:33:15.318Z",
       "blocker_discovered": false,
-      "deviations": "",
-      "known_issues": "",
-      "key_files": [],
-      "key_decisions": [],
-      "full_summary_md": "",
+      "deviations": "Simplified RoomDeviceLifecycleDeps to IEntityResolver (getEntityId only) instead of full IDeviceEntityService/IDeviceMappingStorage/IProfileLoader — the lifecycle layer only needs entity ID lookup.",
+      "known_issues": "None.",
+      "key_files": [
+        "everything-presence-mmwave-configurator/backend/src/domain/roomDeviceLifecycle.ts",
+        "everything-presence-mmwave-configurator/backend/src/__tests__/unit/roomDeviceLifecycle.test.ts"
+      ],
+      "key_decisions": [
+        "Simplified deps interface to IEntityResolver (getEntityId only) instead of full IDeviceEntityService/IDeviceMappingStorage/IProfileLoader",
+        "Exported deriveEntityKeys as standalone pure function for direct unit testing"
+      ],
+      "full_summary_md": "---\nid: T02\nparent: S04\nmilestone: M004\nkey_files:\n  - everything-presence-mmwave-configurator/backend/src/domain/roomDeviceLifecycle.ts\n  - everything-presence-mmwave-configurator/backend/src/__tests__/unit/roomDeviceLifecycle.test.ts\nkey_decisions:\n  - Simplified deps interface to IEntityResolver (getEntityId only) instead of full IDeviceEntityService/IDeviceMappingStorage/IProfileLoader\n  - Exported deriveEntityKeys as standalone pure function for direct unit testing\nduration: \"\"\nverification_result: passed\ncompleted_at: 2026-03-31T15:33:15.318Z\nblocker_discovered: false\n---\n\n# T02: Built roomDeviceLifecycle service bridging zone assignments to RoomDeviceService, with 25 passing unit tests\n\n**Built roomDeviceLifecycle service bridging zone assignments to RoomDeviceService, with 25 passing unit tests**\n\n## What Happened\n\nCreated roomDeviceLifecycle.ts with deriveEntityKeys (pure slot→entity key mapping), buildRoomDeviceDescriptor (pure function grouping multi-sensor assignments by room zone and resolving entity IDs via IEntityResolver), and createOrUpdateRoomDevice/removeRoomDevice async wrappers. Simplified dependency interface to IEntityResolver with just getEntityId instead of the plan's broader deps. 25 unit tests cover all must-haves: single/multi zone+sensor combos, aggregation mode defaults and overrides, label fallback, missing entity warnings, exclusion/entry slot filtering, 0-based zone indices, error propagation, and edge cases.\n\n## Verification\n\nRan vitest: 25/25 tests pass. Ran tsc --noEmit on backend: no errors in new files.\n\n## Verification Evidence\n\n| # | Command | Exit Code | Verdict | Duration |\n|---|---------|-----------|---------|----------|\n| 1 | `npx vitest run backend/src/__tests__/unit/roomDeviceLifecycle.test.ts` | 0 | ✅ pass | 315ms |\n| 2 | `cd backend && npx tsc --noEmit | grep roomDeviceLifecycle` | 0 | ✅ pass | 4000ms |\n\n\n## Deviations\n\nSimplified RoomDeviceLifecycleDeps to IEntityResolver (getEntityId only) instead of full IDeviceEntityService/IDeviceMappingStorage/IProfileLoader — the lifecycle layer only needs entity ID lookup.\n\n## Known Issues\n\nNone.\n\n## Files Created/Modified\n\n- `everything-presence-mmwave-configurator/backend/src/domain/roomDeviceLifecycle.ts`\n- `everything-presence-mmwave-configurator/backend/src/__tests__/unit/roomDeviceLifecycle.test.ts`\n",
       "description": "Create the core service that bridges S03's zone assignment results with S02's RoomDeviceService. The lifecycle orchestrator takes a RoomConfig + zone assignments, resolves per-device zone entity IDs, builds a `RoomDeviceDescriptor`, and calls `createRoomDevice()`. This is the riskiest piece of S04 — all integration logic lives here.\n\n## Steps\n\n1. **Create `backend/src/domain/roomDeviceLifecycle.ts`** — new service with:\n   - `RoomDeviceLifecycleDeps` interface: `{ roomDeviceService: RoomDeviceService, deviceEntityService: IDeviceEntityService, deviceMappingStorage: IDeviceMappingStorage, profileLoader: IProfileLoader }`\n   - `buildRoomDeviceDescriptor(room: RoomConfig, assignments: ZoneAssignment[]): RoomDeviceDescriptor` — pure function that:\n     a. Groups assignments by room zoneId (multiple sensors may cover the same room zone)\n     b. For each room zone, iterates covering sensors and resolves entity IDs:\n        - From `assignment.slotId` (e.g. `zone2`), derive entity keys: `zone2Occupancy`, `zone2TargetCount`\n        - Call `deviceEntityService.getEntityId(assignment.sensorDeviceId, 'zone2Occupancy')` → occupancy entity\n        - Call `deviceEntityService.getEntityId(assignment.sensorDeviceId, 'zone2TargetCount')` → target count entity\n        - If either returns null, skip that sensor for that zone (log warning)\n     c. Maps room zone index (0-based, order of zones in room.zones) to `RoomDeviceDescriptor.zones[].zoneIndex`\n     d. Uses `zone.aggregationMode ?? 'or'` as the aggregation mode\n     e. Uses `zone.label ?? zone.id` as zoneName\n     f. Returns the complete descriptor\n   - `createOrUpdateRoomDevice(room: RoomConfig, assignments: ZoneAssignment[], deps: RoomDeviceLifecycleDeps): Promise<{ created: boolean, warnings: string[] }>` — orchestration function that:\n     a. Calls `buildRoomDeviceDescriptor()` to build the descriptor\n     b. Skips if descriptor has 0 zones with covering entities (all sensors had missing mappings)\n     c. Calls `deps.roomDeviceService.createRoomDevice(descriptor)` (re-publishing updates existing)\n     d. Returns created=true and any warnings from entity resolution\n   - `removeRoomDevice(room: RoomConfig, deps: { roomDeviceService: RoomDeviceService }): Promise<void>` — calls `removeRoomDevice(room.id, room.zones.length)`\n\n2. **Entity key derivation from SlotId** — critical mapping:\n   - SlotId `zone1` → entity keys `zone1Occupancy`, `zone1TargetCount` (1-based, matching device profile convention)\n   - SlotId `zone2` → `zone2Occupancy`, `zone2TargetCount`\n   - SlotId `exclusion1`/`entry1` → skip (no occupancy/target_count entities for exclusion/entry zones)\n   - Room zone index in RoomDeviceDescriptor is 0-based (matching S02 convention where `zone_0_occupancy` is the first room zone)\n\n3. **Create unit test file `backend/src/__tests__/unit/roomDeviceLifecycle.test.ts`** — at least 12 tests:\n   - Builds correct descriptor for single zone + single sensor\n   - Builds correct descriptor for multiple zones + single sensor\n   - Builds correct descriptor for single zone + multiple covering sensors (entities aggregated)\n   - Uses zone.aggregationMode when present, defaults to 'or' when absent\n   - Uses zone.label as zoneName, falls back to zone.id\n   - Skips sensors with missing entity mappings (warning logged, not thrown)\n   - Skips exclusion/entry slot assignments (no occupancy entities)\n   - Returns empty zones array when all entity lookups fail\n   - createOrUpdateRoomDevice calls roomDeviceService.createRoomDevice with built descriptor\n   - createOrUpdateRoomDevice skips when no zones have covering entities\n   - removeRoomDevice calls roomDeviceService.removeRoomDevice with correct roomId and zoneCount\n   - EP One sensor assignments (if any leak through) produce no entity lookups\n\n## Must-Haves\n\n- [ ] `buildRoomDeviceDescriptor` correctly groups multi-sensor assignments by room zone\n- [ ] Entity key derivation from SlotId uses 1-based keys (`zone1Occupancy` etc.)\n- [ ] Room zone indices in descriptor are 0-based\n- [ ] Missing entity mappings produce warnings, not errors\n- [ ] Aggregation mode defaults to `'or'` when zone has no `aggregationMode`\n- [ ] ≥12 unit tests passing\n\n## Negative Tests\n\n- **Malformed inputs**: ZoneAssignment with unknown slotId format, zone with no matching assignment\n- **Error paths**: deviceEntityService.getEntityId returns null for all sensors, RoomDeviceService.createRoomDevice throws\n- **Boundary conditions**: empty assignments array, single zone with single sensor, zone with only exclusion assignments (no occupancy entities)",
       "estimate": "1h30m",
       "files": [
@@ -2999,6 +3005,28 @@
       "verdict": "✅ pass (pre-existing errors only, none in modified files)",
       "duration_ms": 4100,
       "created_at": "2026-03-31T15:29:25.156Z"
+    },
+    {
+      "id": 59,
+      "task_id": "T02",
+      "slice_id": "S04",
+      "milestone_id": "M004",
+      "command": "npx vitest run backend/src/__tests__/unit/roomDeviceLifecycle.test.ts",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 315,
+      "created_at": "2026-03-31T15:33:15.318Z"
+    },
+    {
+      "id": 60,
+      "task_id": "T02",
+      "slice_id": "S04",
+      "milestone_id": "M004",
+      "command": "cd backend && npx tsc --noEmit | grep roomDeviceLifecycle",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 4000,
+      "created_at": "2026-03-31T15:33:15.318Z"
     }
   ]
 }
