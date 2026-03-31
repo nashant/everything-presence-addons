@@ -255,7 +255,7 @@ export const RoomCanvas: React.FC<RoomCanvasProps> = ({
   roomShellFillMode = 'overlay',
   floorMaterial = 'none',
   sensorPlacements,
-  selectedSensorId: _selectedSensorId,  // Reserved for future visual selection highlighting
+  selectedSensorId,  // Active sensor highlight
   onSensorChange,
   onSensorSelect,
   showWalls = true,
@@ -950,6 +950,7 @@ export const RoomCanvas: React.FC<RoomCanvasProps> = ({
                 toCanvasCoord,
                 canDrag: !!onSensorChange,
                 sensorId: sensor.id,
+                selected: sensor.id === selectedSensorId,
                 onDragStart: () => {
                   setActiveDrag({ mode: 'device-drag', sensorId: sensor.id });
                   onDragStateChange?.(true);

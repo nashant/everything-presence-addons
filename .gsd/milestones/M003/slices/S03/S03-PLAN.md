@@ -54,7 +54,7 @@ The Devices panel is still entirely single-device: `linkedDeviceIds` only checks
   - Estimate: 1h
   - Files: everything-presence-mmwave-configurator/frontend/src/pages/RoomBuilderPage.tsx
   - Verify: cd everything-presence-mmwave-configurator && npx tsc --noEmit 2>&1 | grep -E 'RoomBuilderPage\.tsx' | head -5; echo "---"; grep -c 'hasDevice' frontend/src/pages/RoomBuilderPage.tsx; echo '(should be 0)'
-- [ ] **T02: Wire per-sensor selection, DeviceEditor sensor context, remove, and canvas highlighting** — ## Description
+- [x] **T02: Wired sensor card click → DeviceEditor for specific sensor, trash icon remove, canvas selection ring, and sensor-aware DeviceEditor with color dot and per-sensor placement editing** — ## Description
 
 T01 delivered the Devices panel with sensor cards and Add Device flow. This task wires the remaining interactions: clicking a sensor card opens DeviceEditor for that specific sensor, tapping a sensor on canvas highlights it, DeviceEditor shows sensor-specific placement data, per-sensor remove works, and the canvas renders a selection ring around the active sensor.
 

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "exported_at": "2026-03-31T05:29:39.880Z",
+  "exported_at": "2026-03-31T05:34:02.820Z",
   "milestones": [
     {
       "id": "M001",
@@ -1349,19 +1349,28 @@
       "milestone_id": "M003",
       "slice_id": "S03",
       "id": "T02",
-      "title": "Wire per-sensor selection, DeviceEditor sensor context, remove, and canvas highlighting",
-      "status": "pending",
-      "one_liner": "",
-      "narrative": "",
-      "verification_result": "",
+      "title": "Wired sensor card click → DeviceEditor for specific sensor, trash icon remove, canvas selection ring, and sensor-aware DeviceEditor with color dot and per-sensor placement editing",
+      "status": "complete",
+      "one_liner": "Wired sensor card click → DeviceEditor for specific sensor, trash icon remove, canvas selection ring, and sensor-aware DeviceEditor with color dot and per-sensor placement editing",
+      "narrative": "Eight changes across four files: (1) Sensor card click sets selectedItem to device type with sensor.deviceId and opens DeviceEditor. (2) New removeSensor useCallback splices sensor from sensors[], syncs singular legacy fields from sensors[0] or clears all when last sensor removed. (3) Trash icon calls removeSensor. (4) DeviceEditor gets sensorId and color props with color dot in header. (5) DeviceEditor render block rewritten as IIFE that finds selected sensor and passes sensor-specific placement/handlers. (6) selectedSensorId prop passed to RoomCanvas. (7) RoomCanvas _selectedSensorId renamed to selectedSensorId, passed as selected to renderDeviceInteractive. (8) DeviceItemRenderer renders dashed selection ring when selected=true.",
+      "verification_result": "All checks pass: npx tsc --noEmit zero errors from all four files, _selectedSensorId count 0 in RoomCanvas, selected boolean prop present in DeviceItemRenderer, hasDevice count 0 in RoomBuilderPage, SENSOR_COLORS imported.",
       "duration": "",
-      "completed_at": null,
+      "completed_at": "2026-03-31T05:34:02.809Z",
       "blocker_discovered": false,
-      "deviations": "",
-      "known_issues": "",
-      "key_files": [],
-      "key_decisions": [],
-      "full_summary_md": "",
+      "deviations": "None.",
+      "known_issues": "None.",
+      "key_files": [
+        "everything-presence-mmwave-configurator/frontend/src/pages/RoomBuilderPage.tsx",
+        "everything-presence-mmwave-configurator/frontend/src/components/DeviceEditor.tsx",
+        "everything-presence-mmwave-configurator/frontend/src/components/RoomCanvas.tsx",
+        "everything-presence-mmwave-configurator/frontend/src/components/canvas/DeviceItemRenderer.tsx"
+      ],
+      "key_decisions": [
+        "Shared removeSensor helper used by both trash icon and DeviceEditor onUnlink",
+        "DeviceEditor render block uses IIFE to derive selectedSensor inline",
+        "Selection ring is dashed stroke circle with sensor color, scaling inversely with zoom"
+      ],
+      "full_summary_md": "---\nid: T02\nparent: S03\nmilestone: M003\nkey_files:\n  - everything-presence-mmwave-configurator/frontend/src/pages/RoomBuilderPage.tsx\n  - everything-presence-mmwave-configurator/frontend/src/components/DeviceEditor.tsx\n  - everything-presence-mmwave-configurator/frontend/src/components/RoomCanvas.tsx\n  - everything-presence-mmwave-configurator/frontend/src/components/canvas/DeviceItemRenderer.tsx\nkey_decisions:\n  - Shared removeSensor helper used by both trash icon and DeviceEditor onUnlink\n  - DeviceEditor render block uses IIFE to derive selectedSensor inline\n  - Selection ring is dashed stroke circle with sensor color, scaling inversely with zoom\nduration: \"\"\nverification_result: passed\ncompleted_at: 2026-03-31T05:34:02.809Z\nblocker_discovered: false\n---\n\n# T02: Wired sensor card click → DeviceEditor for specific sensor, trash icon remove, canvas selection ring, and sensor-aware DeviceEditor with color dot and per-sensor placement editing\n\n**Wired sensor card click → DeviceEditor for specific sensor, trash icon remove, canvas selection ring, and sensor-aware DeviceEditor with color dot and per-sensor placement editing**\n\n## What Happened\n\nEight changes across four files: (1) Sensor card click sets selectedItem to device type with sensor.deviceId and opens DeviceEditor. (2) New removeSensor useCallback splices sensor from sensors[], syncs singular legacy fields from sensors[0] or clears all when last sensor removed. (3) Trash icon calls removeSensor. (4) DeviceEditor gets sensorId and color props with color dot in header. (5) DeviceEditor render block rewritten as IIFE that finds selected sensor and passes sensor-specific placement/handlers. (6) selectedSensorId prop passed to RoomCanvas. (7) RoomCanvas _selectedSensorId renamed to selectedSensorId, passed as selected to renderDeviceInteractive. (8) DeviceItemRenderer renders dashed selection ring when selected=true.\n\n## Verification\n\nAll checks pass: npx tsc --noEmit zero errors from all four files, _selectedSensorId count 0 in RoomCanvas, selected boolean prop present in DeviceItemRenderer, hasDevice count 0 in RoomBuilderPage, SENSOR_COLORS imported.\n\n## Verification Evidence\n\n| # | Command | Exit Code | Verdict | Duration |\n|---|---------|-----------|---------|----------|\n| 1 | `cd everything-presence-mmwave-configurator && npx tsc --noEmit 2>&1 | grep -E '(RoomBuilderPage|DeviceEditor|RoomCanvas|DeviceItemRenderer)\\.tsx' | head -10` | 0 | ✅ pass | 3000ms |\n| 2 | `grep -c '_selectedSensorId' frontend/src/components/RoomCanvas.tsx` | 0 | ✅ pass | 50ms |\n| 3 | `grep -q 'selected.*boolean' frontend/src/components/canvas/DeviceItemRenderer.tsx && echo 'OK'` | 0 | ✅ pass | 50ms |\n| 4 | `grep -c 'hasDevice' frontend/src/pages/RoomBuilderPage.tsx` | 0 | ✅ pass | 50ms |\n| 5 | `grep -q 'SENSOR_COLORS' frontend/src/pages/RoomBuilderPage.tsx && echo 'OK'` | 0 | ✅ pass | 50ms |\n\n\n## Deviations\n\nNone.\n\n## Known Issues\n\nNone.\n\n## Files Created/Modified\n\n- `everything-presence-mmwave-configurator/frontend/src/pages/RoomBuilderPage.tsx`\n- `everything-presence-mmwave-configurator/frontend/src/components/DeviceEditor.tsx`\n- `everything-presence-mmwave-configurator/frontend/src/components/RoomCanvas.tsx`\n- `everything-presence-mmwave-configurator/frontend/src/components/canvas/DeviceItemRenderer.tsx`\n",
       "description": "## Description\n\nT01 delivered the Devices panel with sensor cards and Add Device flow. This task wires the remaining interactions: clicking a sensor card opens DeviceEditor for that specific sensor, tapping a sensor on canvas highlights it, DeviceEditor shows sensor-specific placement data, per-sensor remove works, and the canvas renders a selection ring around the active sensor.\n\n## Steps\n\n1. **Per-sensor card click → DeviceEditor**: In the sensor card's `onClick` handler (from T01), set `setSelectedItem({ type: 'device', id: sensor.deviceId })` and `setShowDeviceEditor(true)`. The `handleSensorSelect` callback already does this for canvas taps — sensor card clicks should mirror the same behavior.\n\n2. **Update DeviceEditor props for sensor context**: Add a `sensorId` prop to the `DeviceEditorProps` interface in DeviceEditor.tsx. Also add an optional `color` prop (string) for visual identification. In the header, render the color dot next to the device name. The calling code in RoomBuilderPage.tsx must look up the active sensor from `selectedRoom.sensors` using `selectedItem?.id`, find its index for SENSOR_COLORS, find its placement, and pass sensor-specific props to DeviceEditor.\n\n3. **Wire DeviceEditor `onPlacementChange` for sensors**: Currently updates `selectedRoom.devicePlacement`. For sensor mode, it must update the specific sensor's placement in `sensors[]` (same pattern as `handleSensorChange`). The `onPlacementChange` callback should update `sensors[sensorIndex].placement` and sync `devicePlacement` from `sensors[0]` for backward compat.\n\n4. **Wire DeviceEditor `onUnlink` for sensors**: Currently clears singular `deviceId/profileId/entityMappings/entityNamePrefix`. For sensor mode, splice the sensor from `sensors[]`. If it was the last sensor, also clear singular legacy fields. If it was `sensors[0]`, sync the new `sensors[0]` to singular fields.\n\n5. **Per-sensor remove via trash icon on card**: Wire the trash button on each sensor card (rendered in T01) to splice that sensor from `sensors[]`. Same logic as step 4's `onUnlink` — can share a `removeSensor(sensorId)` helper function.\n\n6. **Pass `selectedSensorId` to RoomCanvas**: In RoomBuilderPage.tsx where `<RoomCanvas>` is rendered (~line 1340), pass `selectedSensorId={selectedItem?.type === 'device' ? selectedItem.id : undefined}`. Currently it's not passed at all.\n\n7. **Add selection ring in RoomCanvas rendering**: In RoomCanvas.tsx, rename `_selectedSensorId` to `selectedSensorId` (remove the underscore prefix). In the multi-sensor `renderDeviceInteractive` loop (~line 937), pass `selected={sensor.id === selectedSensorId}` to the render call. In `DeviceItemRenderer.tsx`, add a `selected?: boolean` to `DeviceInteractiveParams`. When `selected` is true, render an additional circle (or ring) around the device icon — e.g., a dashed stroke circle with the sensor's color at slightly larger radius than the icon.\n\n8. **Update `showDeviceEditor` gating**: The DeviceEditor render block (~line 2266) currently checks `hasDevice` (which T01 replaced). Update it to check whether a sensor is selected: `showDeviceEditor && selectedSensor && selectedRoom`. Where `selectedSensor` is derived from `selectedRoom.sensors?.find(s => s.deviceId === selectedItem?.id)`.\n\n## Must-Haves\n\n- [ ] Sensor card click opens DeviceEditor for that specific sensor\n- [ ] Canvas tap on sensor (handleSensorSelect) opens DeviceEditor + highlights sensor\n- [ ] DeviceEditor shows correct placement for the selected sensor\n- [ ] DeviceEditor onPlacementChange updates the specific sensor's placement in sensors[]\n- [ ] DeviceEditor onUnlink removes the specific sensor from sensors[]\n- [ ] Trash icon on sensor card removes that sensor\n- [ ] selectedSensorId passed to RoomCanvas and used for visual selection ring\n- [ ] Removing last sensor clears singular legacy fields\n- [ ] TypeScript compiles with zero new errors\n\n## Verification\n\n- `cd everything-presence-mmwave-configurator && npx tsc --noEmit 2>&1 | grep -E '(RoomBuilderPage|DeviceEditor|RoomCanvas|DeviceItemRenderer)\\.tsx' | head -10` — zero errors from S03 files\n- `grep -q 'selectedSensorId' everything-presence-mmwave-configurator/frontend/src/components/RoomCanvas.tsx && ! grep -q '_selectedSensorId' everything-presence-mmwave-configurator/frontend/src/components/RoomCanvas.tsx && echo 'OK'` — underscore prefix removed\n- `grep -q 'selected.*boolean' everything-presence-mmwave-configurator/frontend/src/components/canvas/DeviceItemRenderer.tsx && echo 'OK'` — selected prop added",
       "estimate": "1h",
       "files": [
@@ -1759,6 +1768,61 @@
       "verdict": "✅ pass",
       "duration_ms": 50,
       "created_at": "2026-03-31T05:29:39.869Z"
+    },
+    {
+      "id": 22,
+      "task_id": "T02",
+      "slice_id": "S03",
+      "milestone_id": "M003",
+      "command": "cd everything-presence-mmwave-configurator && npx tsc --noEmit 2>&1 | grep -E '(RoomBuilderPage|DeviceEditor|RoomCanvas|DeviceItemRenderer)\\.tsx' | head -10",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 3000,
+      "created_at": "2026-03-31T05:34:02.809Z"
+    },
+    {
+      "id": 23,
+      "task_id": "T02",
+      "slice_id": "S03",
+      "milestone_id": "M003",
+      "command": "grep -c '_selectedSensorId' frontend/src/components/RoomCanvas.tsx",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 50,
+      "created_at": "2026-03-31T05:34:02.809Z"
+    },
+    {
+      "id": 24,
+      "task_id": "T02",
+      "slice_id": "S03",
+      "milestone_id": "M003",
+      "command": "grep -q 'selected.*boolean' frontend/src/components/canvas/DeviceItemRenderer.tsx && echo 'OK'",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 50,
+      "created_at": "2026-03-31T05:34:02.809Z"
+    },
+    {
+      "id": 25,
+      "task_id": "T02",
+      "slice_id": "S03",
+      "milestone_id": "M003",
+      "command": "grep -c 'hasDevice' frontend/src/pages/RoomBuilderPage.tsx",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 50,
+      "created_at": "2026-03-31T05:34:02.809Z"
+    },
+    {
+      "id": 26,
+      "task_id": "T02",
+      "slice_id": "S03",
+      "milestone_id": "M003",
+      "command": "grep -q 'SENSOR_COLORS' frontend/src/pages/RoomBuilderPage.tsx && echo 'OK'",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 50,
+      "created_at": "2026-03-31T05:34:02.809Z"
     }
   ]
 }

@@ -125,13 +125,15 @@ export interface DeviceInteractiveParams extends DeviceRenderParams {
   onSelect: () => void;
   /** Sensor identifier for multi-sensor drag isolation */
   sensorId?: string;
+  /** Whether this sensor is currently selected — renders a highlight ring */
+  selected?: boolean;
 }
 
 export function renderDeviceInteractive(params: DeviceInteractiveParams): React.ReactNode {
   const {
     placement, fovDeg, maxRangeMeters, wallPoints, clipToWalls,
     showRadar, iconUrl, color = '#22c55e', zoom, toCanvasCoord,
-    canDrag, onDragStart, onSelect,
+    canDrag, onDragStart, onSelect, selected,
   } = params;
   const { x: px, y: py } = toCanvasCoord(placement);
   const rotationRad = (((placement.rotationDeg ?? 0) + 90) * Math.PI) / 180;
@@ -158,6 +160,19 @@ export function renderDeviceInteractive(params: DeviceInteractiveParams): React.
           stroke={color}
           strokeWidth={1.5}
           vectorEffect="non-scaling-stroke"
+          style={{ pointerEvents: 'none' }}
+        />
+      )}
+      {/* Selection ring — dashed circle around selected sensor */}
+      {selected && (
+        <circle
+          cx={px}
+          cy={py}
+          r={iconUrl ? iconSize / 2 + 4 / zoom : radius + 6 / zoom}
+          fill="none"
+          stroke={color}
+          strokeWidth={2 / zoom}
+          strokeDasharray={`${6 / zoom} ${3 / zoom}`}
           style={{ pointerEvents: 'none' }}
         />
       )}

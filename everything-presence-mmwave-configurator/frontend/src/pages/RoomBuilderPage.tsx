@@ -268,6 +268,38 @@ export const RoomBuilderPage: React.FC<RoomBuilderPageProps> = ({
     setShowDeviceEditor(true);
   }, []);
 
+  // Remove a sensor from the sensors[] array. If it was the last one, also clear singular legacy fields.
+  // If sensors[0] was removed, sync the new sensors[0] to singular fields for backward compat.
+  const removeSensor = useCallback((sensorId: string) => {
+    if (!selectedRoom?.sensors) return;
+    const updatedSensors = selectedRoom.sensors.filter((s) => s.deviceId !== sensorId);
+    const nextRoom: RoomConfig = { ...selectedRoom, sensors: updatedSensors };
+    if (updatedSensors.length === 0) {
+      // Last sensor removed — clear singular legacy fields
+      nextRoom.deviceId = undefined;
+      nextRoom.profileId = undefined;
+      nextRoom.entityMappings = undefined;
+      nextRoom.entityNamePrefix = undefined;
+      nextRoom.devicePlacement = undefined;
+    } else {
+      // Sync singular fields from new sensors[0] for backward compat
+      const first = updatedSensors[0];
+      nextRoom.deviceId = first.deviceId;
+      nextRoom.profileId = first.profileId;
+      nextRoom.entityMappings = first.entityMappings;
+      nextRoom.entityNamePrefix = first.entityNamePrefix;
+      if (first.placement) {
+        nextRoom.devicePlacement = first.placement;
+      }
+    }
+    setRooms((prev) => prev.map((r) => (r.id === selectedRoom.id ? nextRoom : r)));
+    // If the removed sensor was selected, deselect
+    if (selectedItem?.type === 'device' && selectedItem.id === sensorId) {
+      setSelectedItem(null);
+      setShowDeviceEditor(false);
+    }
+  }, [selectedRoom, selectedItem]);
+
   const handlePointsChange = useCallback((nextPoints: { x: number; y: number }[]) => {
     if (!selectedRoom) return;
     const centroid = computeCentroid(nextPoints);
@@ -1383,6 +1415,7 @@ export const RoomBuilderPage: React.FC<RoomBuilderPageProps> = ({
                   sensorPlacements={sensorPlacements}
                   onSensorChange={activeSection === 'devices' ? handleSensorChange : undefined}
                   onSensorSelect={handleSensorSelect}
+                  selectedSensorId={selectedItem?.type === 'device' ? selectedItem.id : undefined}
                   fieldOfViewDeg={selectedProfile?.limits?.fieldOfViewDegrees}
                   maxRangeMeters={selectedProfile?.limits?.maxRangeMeters}
                   deviceIconUrl={selectedProfile?.iconUrl}
@@ -1667,8 +1700,8 @@ export const RoomBuilderPage: React.FC<RoomBuilderPageProps> = ({
                       <div
                         key={sensor.deviceId}
                         onClick={() => {
-                          // T02 will wire full DeviceEditor context per sensor
-                          console.log('[Devices] sensor card clicked:', sensor.deviceId);
+                          setSelectedItem({ type: 'device', id: sensor.deviceId });
+                          setShowDeviceEditor(true);
                         }}
                         className="group relative rounded-lg border p-2 cursor-pointer transition-all border-slate-700 bg-slate-800/30 hover:border-slate-600"
                       >
@@ -1676,7 +1709,7 @@ export const RoomBuilderPage: React.FC<RoomBuilderPageProps> = ({
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
-                            console.log('[Devices] remove sensor:', sensor.deviceId);
+                            removeSensor(sensor.deviceId);
                           }}
                           className="absolute top-1 right-1 z-10 opacity-0 group-hover:opacity-100 text-slate-600 hover:text-red-400 transition-all text-sm"
                           title="Remove device"
@@ -2330,30 +2363,34 @@ export const RoomBuilderPage: React.FC<RoomBuilderPageProps> = ({
           )}
 
           {/* Device Editor Panel */}
-          {showDeviceEditor && sensorCount > 0 && selectedRoom && (
-            <DeviceEditor
-              deviceName={selectedDevice?.name || selectedDevice?.id || 'Device'}
-              placement={selectedRoom.devicePlacement ?? { x: 0, y: 0, rotationDeg: 0 }}
-              roomCentroid={selectedRoom.roomShell?.points?.length ? computeCentroid(selectedRoom.roomShell.points) : undefined}
-              onPlacementChange={(placement) => {
-                const nextRoom: RoomConfig = { ...selectedRoom, devicePlacement: placement };
-                setRooms((prev) => prev.map((r) => (r.id === selectedRoom.id ? nextRoom : r)));
-              }}
-              onUnlink={() => {
-                const nextRoom: RoomConfig = {
-                  ...selectedRoom,
-                  deviceId: undefined,
-                  profileId: undefined,
-                  entityMappings: undefined,
-                  entityNamePrefix: undefined,
-                };
-                setRooms((prev) => prev.map((r) => (r.id === selectedRoom.id ? nextRoom : r)));
-                setShowDeviceEditor(false);
-              }}
-              onClose={() => setShowDeviceEditor(false)}
-              onRotationCommit={(angle) => handleRotationSuggestion(angle)}
-            />
-          )}
+          {showDeviceEditor && selectedRoom && (() => {
+            const selectedSensor = selectedRoom.sensors?.find(
+              (s) => s.deviceId === selectedItem?.id
+            );
+            if (!selectedSensor) return null;
+            const sensorIndex = selectedRoom.sensors?.findIndex(
+              (s) => s.deviceId === selectedItem?.id
+            ) ?? 0;
+            const sensorColor = SENSOR_COLORS[sensorIndex % SENSOR_COLORS.length];
+            const sensorDevice = devices.find((d) => d.id === selectedSensor.deviceId);
+            return (
+              <DeviceEditor
+                deviceName={sensorDevice?.name || selectedSensor.deviceId}
+                sensorId={selectedSensor.deviceId}
+                color={sensorColor}
+                placement={selectedSensor.placement ?? { x: 0, y: 0, rotationDeg: 0 }}
+                roomCentroid={selectedRoom.roomShell?.points?.length ? computeCentroid(selectedRoom.roomShell.points) : undefined}
+                onPlacementChange={(placement) => {
+                  handleSensorChange(selectedSensor.deviceId, placement);
+                }}
+                onUnlink={() => {
+                  removeSensor(selectedSensor.deviceId);
+                }}
+                onClose={() => setShowDeviceEditor(false)}
+                onRotationCommit={(angle) => handleRotationSuggestion(angle)}
+              />
+            );
+          })()}
         </div>
       )}
 

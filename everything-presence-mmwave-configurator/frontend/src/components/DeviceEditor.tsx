@@ -8,6 +8,10 @@ interface DevicePlacement {
 
 interface DeviceEditorProps {
   deviceName: string;
+  /** Sensor device ID for multi-sensor context */
+  sensorId?: string;
+  /** Sensor color for visual identification */
+  color?: string;
   placement: DevicePlacement;
   roomCentroid?: { x: number; y: number };
   onPlacementChange: (placement: DevicePlacement) => void;
@@ -18,6 +22,8 @@ interface DeviceEditorProps {
 
 export const DeviceEditor: React.FC<DeviceEditorProps> = ({
   deviceName,
+  sensorId: _sensorId,
+  color,
   placement,
   roomCentroid,
   onPlacementChange,
@@ -30,9 +36,16 @@ export const DeviceEditor: React.FC<DeviceEditorProps> = ({
       {/* Header */}
       <div className="flex items-center justify-between px-6 py-4 border-b border-slate-700">
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 text-aqua-400 flex items-center justify-center text-2xl">
-            📡
-          </div>
+          {color ? (
+            <span
+              className="w-8 h-8 rounded-full flex-shrink-0"
+              style={{ backgroundColor: color }}
+            />
+          ) : (
+            <div className="w-8 h-8 text-aqua-400 flex items-center justify-center text-2xl">
+              📡
+            </div>
+          )}
           <h2 className="text-lg font-semibold text-white">{deviceName}</h2>
         </div>
         <button
