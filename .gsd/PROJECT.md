@@ -10,6 +10,10 @@
 
 A rewrite of the Everything Presence mmWave configurator with a room-first architecture. Instead of the current device-first wizard (pick device → discover entities → create room → place device), the flow is: create rooms first, then add sensors to them.
 
+## Core Value
+
+Room-level zone management with automatic coordinate translation and HA integration — users draw zones once on the room map and the system fans out translated coordinates to each covering sensor, with HA template sensors handling runtime occupancy aggregation.
+
 ## Current State
 
 - Branch: `feat/multi-device-rooms` (M003 complete)
@@ -23,32 +27,38 @@ A rewrite of the Everything Presence mmWave configurator with a room-first archi
 - Zone editing embedded in Room Builder
 - Multi-sensor rooms render N colored radar cones with independent placement
 - Full multi-sensor device management: add/select/edit/remove sensors via Devices panel with per-sensor DeviceEditor
+- Selection-driven emphasis: selected sensor's cone prominent, others dimmed
 - Dev stack: Docker compose with HA 2026.2, Mosquitto, mock devices
-- Backend: 0 TS errors, 16/16 vitest tests pass
-- Frontend: 124 TS errors (non-blocking, Vite build succeeds), 52 canvas module tests pass
+- Frontend: 124 pre-existing TS errors (non-blocking, Vite build succeeds), 52 canvas module tests pass
 
-## Tech Stack
+## Architecture / Key Patterns
 
 - **Backend**: Express + TypeScript (CommonJS, ES2021), pino logging, WebSocket for live tracking
 - **Frontend**: React 18 + Vite + Tailwind CSS (ESM, ES2022), Biome for linting
 - **Persistence**: JSON files (rooms.json, floors.json, settings.json)
-- **Integration**: Home Assistant REST + WebSocket APIs
-- **Profiles**: JSON device profiles for EP Lite, EP One, EP Pro
+- **Integration**: Home Assistant REST + WebSocket APIs for reads/writes, MQTT (Mosquitto) in dev stack for mock devices
+- **Profiles**: JSON device profiles for EP Lite, EP One, EP Pro — each defines zone limits, FOV, range, entity templates
+- **Canvas rendering**: Generic item system in `components/canvas/` — per-type renderers with shared `ItemRenderer` interface, unified `ActiveDrag` state machine
+- **Zone system**: Zones stored as room-level `Zone[]` on `RoomConfig`, types: ZoneRect | ZonePolygon, zoneWriter writes device-relative coordinates to HA entities
+- **Multi-sensor**: `sensors: SensorAttachment[]` on RoomConfig, per-sensor colored rendering, selection-driven dimming, `selectedItem` unified selection model
 - **Dev**: Docker compose with HA 2026.2, Mosquitto MQTT, MQTT mock devices
 
-## Architecture
+## Capability Contract
 
-- **Entry point**: DashboardPage (rooms grouped by floor)
-- **Room editing**: RoomBuilderPage with EditorSidebar + PopOutPanel sections
-- **Canvas rendering**: Generic item system in `components/canvas/` — per-type renderers (Device, Door, Furniture, Zone) with shared `ItemRenderer` interface, unified `ActiveDrag` state machine, shared geometry module
-- **Device attachment**: Inline device picker + EntityDiscovery (bypasses WizardPage)
-- **Navigation**: Dashboard → RoomBuilder → Save → Dashboard
-- **Backend routes**: `/api/rooms`, `/api/floors`, `/api/import/ha`, `/api/health`
+See `.gsd/REQUIREMENTS.md` for the explicit capability contract, requirement status, and coverage mapping.
+
+## Milestone Sequence
+
+- [x] M001: Room-First Configurator Rewrite — Room-first UX with dashboard, room builder, inline device attachment
+- [x] M002: RoomCanvas Generic Item System — Extract renderers, unify drag state machine, reduce RoomCanvas complexity
+- [x] M003: Multi-Device Room Support — Backend sensors[] model, frontend multi-sensor rendering, device management UI
+- [ ] M004: Room-Level Zone System with HA Integration — Coordinate transform, zone-to-sensor assignment, virtual HA room device, template sensor aggregation
 
 ## Known Issues
 
-- Frontend TS error count at 124 — unused vars and type gaps across various files (10 in canvas/ module are unused-import warnings)
-- RoomCanvas at 894 lines — wall editing and coordinate transforms remain; further extraction possible but not planned
-- RoomBuilderPage.tsx is 2,269 lines — refactoring candidate
+- Frontend TS error count at 124 — unused vars and type gaps across various files
+- RoomCanvas at 894 lines — wall editing and coordinate transforms remain
+- RoomBuilderPage.tsx is ~2,260 lines — refactoring candidate
 - npm lockfile must use npm 10.8.2 for Docker compatibility
 - HA ingress not independently verified (dev stack uses direct port)
+- Backend integration tests require Docker container filesystem (/config/)

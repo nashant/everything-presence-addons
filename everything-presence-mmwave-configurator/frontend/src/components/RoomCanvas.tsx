@@ -909,6 +909,7 @@ export const RoomCanvas: React.FC<RoomCanvasProps> = ({
                         showRadar: !!showRadar,
                         iconUrl: sensor.iconUrl,
                         color: sensor.color,
+                        dimmed: sensorPlacements!.length > 1 && !!selectedSensorId && sensor.id !== selectedSensorId,
                         zoom: effectiveZoom,
                         toCanvasCoord,
                       })}
@@ -946,6 +947,7 @@ export const RoomCanvas: React.FC<RoomCanvasProps> = ({
                 showRadar: !!showRadar,
                 iconUrl: sensor.iconUrl,
                 color: sensor.color,
+                dimmed: sensorPlacements!.length > 1 && !!selectedSensorId && sensor.id !== selectedSensorId,
                 zoom: effectiveZoom,
                 toCanvasCoord,
                 canDrag: !!onSensorChange,

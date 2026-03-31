@@ -103,6 +103,7 @@ export const RoomBuilderPage: React.FC<RoomBuilderPageProps> = ({
   const selectedFurnitureId = selectedItem?.type === 'furniture' ? selectedItem.id : null;
   const selectedDoorId = selectedItem?.type === 'door' ? selectedItem.id : null;
   const selectedZoneId = selectedItem?.type === 'zone' ? selectedItem.id : null;
+  const selectedDeviceId = selectedItem?.type === 'device' ? selectedItem.id : null;
   const [zoneModeOverride, setZoneModeOverride] = useState<'rect' | 'polygon' | null>(null);
   const [isDoorPlacementMode, setIsDoorPlacementMode] = useState(false);
   const [doorDrag, setDoorDrag] = useState<{
@@ -165,6 +166,11 @@ export const RoomBuilderPage: React.FC<RoomBuilderPageProps> = ({
   const selectedDoor = useMemo(
     () => (selectedDoorId ? selectedRoom?.doors?.find((d) => d.id === selectedDoorId) ?? null : null),
     [selectedDoorId, selectedRoom?.doors],
+  );
+
+  const selectedSensor = useMemo(
+    () => (selectedDeviceId ? selectedRoom?.sensors?.find((s) => s.deviceId === selectedDeviceId) ?? null : null),
+    [selectedDeviceId, selectedRoom?.sensors],
   );
 
   const currentInstallationAngle =
@@ -265,7 +271,6 @@ export const RoomBuilderPage: React.FC<RoomBuilderPageProps> = ({
   const handleSensorSelect = useCallback((sensorId: string) => {
     setSelectedItem({ type: 'device', id: sensorId });
     setActiveSection('devices');
-    setShowDeviceEditor(true);
   }, []);
 
   // Remove a sensor from the sensors[] array. If it was the last one, also clear singular legacy fields.
@@ -296,7 +301,6 @@ export const RoomBuilderPage: React.FC<RoomBuilderPageProps> = ({
     // If the removed sensor was selected, deselect
     if (selectedItem?.type === 'device' && selectedItem.id === sensorId) {
       setSelectedItem(null);
-      setShowDeviceEditor(false);
     }
   }, [selectedRoom, selectedItem]);
 
@@ -1131,7 +1135,6 @@ export const RoomBuilderPage: React.FC<RoomBuilderPageProps> = ({
   }, [selectedRoom]);
   // Device linking flow state: 'pick' = select device, 'discover' = entity discovery
   const [deviceLinkStep, setDeviceLinkStep] = useState<'pick' | 'discover' | null>(null);
-  const [showDeviceEditor, setShowDeviceEditor] = useState(false);
   const [pendingDeviceId, setPendingDeviceId] = useState<string | null>(null);
   const pendingDevice = useMemo(
     () => pendingDeviceId ? devices.find((d) => d.id === pendingDeviceId) ?? null : null,
@@ -1178,7 +1181,6 @@ export const RoomBuilderPage: React.FC<RoomBuilderPageProps> = ({
     setHoveredSegment(null);
     // Close any open editor pop-outs
     setSelectedItem(null);
-    setShowDeviceEditor(false);
   }, []);
 
   /** Unified canvas item selection — maps item type to the right sidebar section + active item */
@@ -1192,10 +1194,6 @@ export const RoomBuilderPage: React.FC<RoomBuilderPageProps> = ({
   const handleItemSelect = useCallback((type: CanvasItemType, id: string) => {
     setActiveSection(sectionForItemType[type]);
     setSelectedItem({ type, id });
-    // Device-specific: also open the device editor panel
-    if (type === 'device') {
-      setShowDeviceEditor(true);
-    }
     // Furniture-specific: close the library modal if open
     if (type === 'furniture') {
       setShowFurnitureLibrary(false);
@@ -1701,7 +1699,6 @@ export const RoomBuilderPage: React.FC<RoomBuilderPageProps> = ({
                         key={sensor.deviceId}
                         onClick={() => {
                           setSelectedItem({ type: 'device', id: sensor.deviceId });
-                          setShowDeviceEditor(true);
                         }}
                         className="group relative rounded-lg border p-2 cursor-pointer transition-all border-slate-700 bg-slate-800/30 hover:border-slate-600"
                       >
@@ -1735,7 +1732,7 @@ export const RoomBuilderPage: React.FC<RoomBuilderPageProps> = ({
                   {(!selectedRoom?.sensors || selectedRoom.sensors.length === 0) && selectedRoom?.deviceId && selectedDevice && (
                     <div
                       onClick={() => {
-                        setShowDeviceEditor(true);
+                        setSelectedItem({ type: 'device', id: selectedRoom!.deviceId! });
                       }}
                       className="group relative rounded-lg border p-2 cursor-pointer transition-all border-slate-700 bg-slate-800/30 hover:border-slate-600"
                     >
@@ -1750,7 +1747,7 @@ export const RoomBuilderPage: React.FC<RoomBuilderPageProps> = ({
                             entityNamePrefix: undefined,
                           };
                           setRooms((prev) => prev.map((r) => (r.id === selectedRoom!.id ? nextRoom : r)));
-                          setShowDeviceEditor(false);
+                          setSelectedItem(null);
                         }}
                         className="absolute top-1 right-1 z-10 opacity-0 group-hover:opacity-100 text-slate-600 hover:text-red-400 transition-all text-sm"
                         title="Remove device"
@@ -2363,13 +2360,9 @@ export const RoomBuilderPage: React.FC<RoomBuilderPageProps> = ({
           )}
 
           {/* Device Editor Panel */}
-          {showDeviceEditor && selectedRoom && (() => {
-            const selectedSensor = selectedRoom.sensors?.find(
-              (s) => s.deviceId === selectedItem?.id
-            );
-            if (!selectedSensor) return null;
+          {selectedSensor && selectedRoom && (() => {
             const sensorIndex = selectedRoom.sensors?.findIndex(
-              (s) => s.deviceId === selectedItem?.id
+              (s) => s.deviceId === selectedSensor.deviceId
             ) ?? 0;
             const sensorColor = SENSOR_COLORS[sensorIndex % SENSOR_COLORS.length];
             const sensorDevice = devices.find((d) => d.id === selectedSensor.deviceId);
@@ -2386,7 +2379,7 @@ export const RoomBuilderPage: React.FC<RoomBuilderPageProps> = ({
                 onUnlink={() => {
                   removeSensor(selectedSensor.deviceId);
                 }}
-                onClose={() => setShowDeviceEditor(false)}
+                onClose={() => setSelectedItem(null)}
                 onRotationCommit={(angle) => handleRotationSuggestion(angle)}
               />
             );

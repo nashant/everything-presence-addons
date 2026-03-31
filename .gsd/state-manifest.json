@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "exported_at": "2026-03-31T05:57:44.863Z",
+  "exported_at": "2026-03-31T09:29:05.164Z",
   "milestones": [
     {
       "id": "M001",
@@ -78,6 +78,80 @@
       "definition_of_done": [],
       "requirement_coverage": "",
       "boundary_map_markdown": "## Boundary Map\n\n### S01 → S02\n\nProduces:\n- `RoomConfig.sensors: SensorAttachment[]` with `SensorAttachment = { deviceId, profileId, placement }` \n- `GET /api/rooms` returns rooms with `sensors[]` populated\n- `POST/PUT /api/rooms` accepts `sensors[]` and backfills legacy `deviceId/profileId/devicePlacement` for backward compat\n- Startup migration writes `sensors[0]` to disk for all rooms that have `deviceId` but no `sensors[]`\n\nConsumes:\n- nothing (first slice)\n\n### S02 → S03\n\nProduces:\n- Frontend `RoomConfig.sensors: SensorAttachment[]` type matching backend\n- `RoomCanvas` accepts `sensorPlacements: SensorRenderInfo[]` prop and renders N colored radar cones\n- `DeviceItemRenderer` updated to render multiple sensors with per-sensor selection\n\nConsumes:\n- Backend `sensors[]` API from S01"
+    },
+    {
+      "id": "M004",
+      "title": "",
+      "status": "queued",
+      "depends_on": [],
+      "created_at": "2026-03-31T07:00:26.890Z",
+      "completed_at": null,
+      "vision": "Allow room-level zone drawing to automatically fan out translated coordinates to each covering sensor, create a virtual HA room device with template binary sensors per zone, and configure aggregation strategies — so HA handles occupancy at runtime without the configurator running.",
+      "success_criteria": [
+        "Draw 2+ zones in a multi-sensor room, save, and see each covering sensor's HA zone entities have correct device-relative coordinates",
+        "A virtual HA room device appears in the device registry with template binary sensors per zone",
+        "Template sensors contain correct Jinja2 referencing the right per-device zone entities with the configured aggregation strategy",
+        "Zone occupancy continues working in HA if the configurator backend is stopped",
+        "Deleting a room removes the virtual HA device and template sensors",
+        "Uncovered zones show a warning in the UI and appear as unavailable in HA",
+        "Target count per zone uses max across covering sensors"
+      ],
+      "key_risks": [
+        {
+          "risk": "Coordinate transform math errors (sign, rotation direction, quadrant) propagate silently to every device zone write",
+          "whyItMatters": "If the math is wrong, zone positions on hardware are wrong and occupancy detections fail. Hard to debug because the coordinates look plausible but are spatially incorrect."
+        },
+        {
+          "risk": "WS API template helper creation is an unproven integration pattern in this codebase",
+          "whyItMatters": "If the WS command structure doesn't work as expected, the entire room-device-with-template-sensors architecture needs an alternative approach."
+        },
+        {
+          "risk": "MQTT discovery from the backend is a new subsystem requiring a new dependency",
+          "whyItMatters": "The backend has no MQTT client. Adding one introduces connection lifecycle, reconnection, and message ordering concerns."
+        },
+        {
+          "risk": "Zone slot overflow: a room with 6 zones but devices with only 4 slots",
+          "whyItMatters": "Some zones may not fit on some devices. The system needs a clear overflow strategy (skip, warn, or prioritize)."
+        }
+      ],
+      "proof_strategy": [
+        {
+          "riskOrUnknown": "Coordinate transform correctness",
+          "retireIn": "S01",
+          "whatWillBeProven": "Unit tests cover all quadrant combinations, rotations, and edge cases. Transform produces correct device-relative coordinates verified against hand-calculated expected values."
+        },
+        {
+          "riskOrUnknown": "WS API template helper creation",
+          "retireIn": "S02",
+          "whatWillBeProven": "A hardcoded test creates a template binary sensor via WS API that appears in HA with correct Jinja2 template and is attached to a device."
+        },
+        {
+          "riskOrUnknown": "MQTT discovery from backend",
+          "retireIn": "S02",
+          "whatWillBeProven": "Backend publishes MQTT discovery message and a virtual device appears in HA device registry with at least one entity."
+        },
+        {
+          "riskOrUnknown": "Zone slot overflow",
+          "retireIn": "S03",
+          "whatWillBeProven": "Assignment algorithm handles rooms with more zones than device slots, producing correct partial assignment with clear feedback about skipped zones."
+        }
+      ],
+      "verification_contract": "Unit tests for coordinate transform covering all quadrant/rotation combinations. Unit tests for coverage analysis with known geometries. Unit tests for zone assignment algorithm including overflow. Integration tests for MQTT discovery + WS template creation in Docker dev stack.",
+      "verification_integration": "MQTT discovery creates HA room device. WS API creates template sensors attached to device. ZoneWriter receives correct translated coordinates. Full pipeline: room save → assignment → translate → write → HA entities verified.",
+      "verification_operational": "Zone occupancy continues working in HA after configurator backend is stopped. Room delete cleans up HA entities.",
+      "verification_uat": "Draw zones in multi-sensor room, save, verify HA device + template sensors appear. Change aggregation strategy, re-save, verify template updates. Delete room, verify cleanup.",
+      "definition_of_done": [
+        "All 5 slices complete with verified outputs",
+        "Coordinate transform unit tests pass for all quadrant/rotation combinations",
+        "MQTT discovery creates HA room device in Docker dev stack",
+        "Template binary sensors created via WS API with correct Jinja2",
+        "ZoneWriter receives correct device-relative coordinates",
+        "Zone coverage visualization works in room builder",
+        "Room delete cleans up HA entities",
+        "No new TypeScript errors introduced"
+      ],
+      "requirement_coverage": "Covers: R001, R002, R003, R004, R005, R006, R007, R008, R009, R010, R011, R012. Leaves for later: R013 (per-sensor zone editing), R014 (live occupancy display). Out of scope: R015 (runtime aggregation in backend).",
+      "boundary_map_markdown": "### S01 → S03\nProduces:\n- `backend/src/domain/zoneTransform.ts` → `transformZoneToDevice(zone, sensorPlacement)` returns device-relative Zone\n- `backend/src/domain/zoneCoverage.ts` → `computeZoneCoverage(zone, sensorPlacement, profile)` returns overlap percentage (0-1)\n- `backend/src/domain/zoneAssignment.ts` → `assignZonesToSensors(zones, sensors, profiles, thresholds)` returns per-sensor zone slot mapping\n\nConsumes: nothing (leaf node)\n\n### S02 → S04\nProduces:\n- `backend/src/ha/mqttClient.ts` → singleton MQTT client with connect/disconnect/publish\n- `backend/src/ha/roomDeviceManager.ts` → `createRoomDevice(room)`, `deleteRoomDevice(roomId)` via MQTT discovery\n- `backend/src/ha/templateSensorManager.ts` → `createTemplateSensor(config)`, `deleteTemplateSensor(entityId)` via WS API\n\nConsumes: nothing (independent proof-of-concept)\n\n### S01, S02 → S03\nProduces:\n- Room save handler integration: assignment + transform + zoneWriter writes per device\n- Updated `routes/rooms.ts` save path calls zone assignment pipeline\n\nConsumes from S01:\n- zoneTransform.ts → transformZoneToDevice()\n- zoneAssignment.ts → assignZonesToSensors()\n\n### S02, S03 → S04\nProduces:\n- Full lifecycle: room save → create/update HA room device + template sensors\n- Template generation from zone assignments + aggregation config\n- Room delete → cleanup HA entities\n- Aggregation strategy + threshold stored on zone config\n\nConsumes from S02:\n- mqttClient.ts, roomDeviceManager.ts, templateSensorManager.ts\n\nConsumes from S03:\n- Zone assignment output (which sensors cover which zones, slot mapping)\n\n### S01, S04 → S05\nProduces:\n- Frontend zone coverage visualization per sensor\n- Aggregation strategy picker UI per zone\n- Overlap threshold config UI per zone\n- Uncovered zone warnings\n\nConsumes from S01:\n- Coverage analysis algorithm (ported to frontend or called via API)\n\nConsumes from S04:\n- Aggregation config data model on zone"
     }
   ],
   "slices": [
@@ -248,6 +322,114 @@
       "proof_level": "integration — real runtime browser verification required",
       "integration_closure": "S03 wires the final UI layer on top of S01 (backend sensors[] model) and S02 (frontend rendering infrastructure). After S03, multi-device room management works end-to-end: add, place, select, edit, remove sensors. Nothing remains for M003.",
       "observability_impact": "None — frontend-only UI wiring with no new runtime signals, APIs, or error surfaces beyond existing patterns.",
+      "sequence": 0,
+      "replan_triggered_at": null
+    },
+    {
+      "milestone_id": "M004",
+      "id": "S01",
+      "title": "Coordinate transform + zone coverage engine",
+      "status": "pending",
+      "risk": "high",
+      "depends": [],
+      "demo": "Unit tests prove room-space → device-space transform is correct for all orientations. Coverage analysis returns per-sensor overlap percentages for each zone. Zone assignment maps zones to device slots respecting profile limits.",
+      "created_at": "2026-03-31T07:04:23.284Z",
+      "completed_at": null,
+      "full_summary_md": "",
+      "full_uat_md": "",
+      "goal": "Three pure-function domain modules — coordinate transform, zone coverage, zone assignment — with comprehensive unit tests proving correctness for all rotation quadrants, zone types, coverage scenarios, and slot assignment edge cases including EP One exclusion.",
+      "success_criteria": "- `coordinateTransform.ts` transforms ZoneRect (center-based) and ZonePolygon from room-space to device-space for arbitrary sensor positions and rotations, outputting begin/end format for downstream zoneWriter compatibility\n- `zoneCoverage.ts` computes numeric overlap percentage (0–1) per zone per sensor using grid-point sampling against the sensor's FOV cone, with configurable grid resolution\n- `zoneAssignment.ts` maps room zones to device zone slots (regular/exclusion/entry pools) respecting profile maxZones limits, skipping EP One devices (maxZones=0), and handling overflow when zones exceed available slots\n- All three modules export an inverse or batch convenience function for downstream use (inverse transform for S05, batch coverage for S03)\n- All unit tests pass: `cd everything-presence-mmwave-configurator/backend && npx vitest run src/__tests__/unit/`",
+      "proof_level": "Contract — pure functions with unit tests, no runtime or HA integration required.",
+      "integration_closure": "- Upstream surfaces consumed: `backend/src/domain/types.ts` (Zone, ZoneRect, ZonePolygon, Point, DevicePlacement, SensorAttachment, isZoneRect, isZonePolygon), `backend/src/domain/polygonUtils.ts` (polygonArea for area-based weighting)\n- New wiring introduced: none — these are pure domain modules with no entrypoint hookup. S03 wires them into the room-save pipeline.\n- What remains: S03 integrates transform + assignment into room save. S05 uses inverse transform + coverage for the frontend visualization.",
+      "observability_impact": "None — pure functions with no runtime, async, or IO. Failures surface entirely through unit test assertions.",
+      "sequence": 0,
+      "replan_triggered_at": null
+    },
+    {
+      "milestone_id": "M004",
+      "id": "S02",
+      "title": "HA room device + template sensor creation proof",
+      "status": "pending",
+      "risk": "high",
+      "depends": [],
+      "demo": "A hardcoded test room creates a virtual HA device via MQTT discovery. Template binary sensors created via WS API appear in HA device registry with correct Jinja2 templates referencing EP sensor zone entities.",
+      "created_at": "2026-03-31T07:04:23.285Z",
+      "completed_at": null,
+      "full_summary_md": "",
+      "full_uat_md": "",
+      "goal": "Prove the HA integration pipeline works end-to-end: MQTT client → discovery message → HA device; WS API → template helper → binary sensor with Jinja2 template. Retire the two biggest integration unknowns.",
+      "success_criteria": "- MQTT client connects to Mosquitto in Docker dev stack\n- MQTT discovery message creates a virtual device in HA device registry\n- WS API creates a template binary sensor helper\n- Template sensor appears in HA with correct Jinja2\n- Template sensor is attached to the MQTT-discovered device (or documented if not possible)\n- Cleanup: empty discovery payload removes device, WS API deletes template sensor",
+      "proof_level": "integration — verified against real HA in Docker dev stack",
+      "integration_closure": "Exports roomDeviceManager and templateSensorManager consumed by S04",
+      "observability_impact": "MQTT connection status logged. Template sensor creation success/failure logged.",
+      "sequence": 0,
+      "replan_triggered_at": null
+    },
+    {
+      "milestone_id": "M004",
+      "id": "S03",
+      "title": "Zone assignment + per-device translated zone writes",
+      "status": "pending",
+      "risk": "medium",
+      "depends": [
+        "S01"
+      ],
+      "demo": "Room save triggers zone-to-sensor assignment, translates coordinates per sensor, and writes device-relative zones via zoneWriter. Correct coordinates verified in HA entity states.",
+      "created_at": "2026-03-31T07:04:23.285Z",
+      "completed_at": null,
+      "full_summary_md": "",
+      "full_uat_md": "",
+      "goal": "Wire S01's transform + assignment into the room save flow. When zones are saved, each covering sensor gets its zones written with correct device-relative coordinates.",
+      "success_criteria": "- Room save calls zone assignment pipeline\n- Each covering sensor receives translated zone coordinates via zoneWriter\n- Zone slot allocation handles multiple room zones per device\n- HA zone entity values match expected device-relative coordinates\n- Sensors with maxZones=0 are skipped",
+      "proof_level": "integration — zone entity values verified in HA via Docker dev stack",
+      "integration_closure": "Zone assignment output feeds S04 for template sensor generation",
+      "observability_impact": "Per-sensor zone write results logged with success/failure per slot",
+      "sequence": 0,
+      "replan_triggered_at": null
+    },
+    {
+      "milestone_id": "M004",
+      "id": "S04",
+      "title": "Room device lifecycle + aggregation config",
+      "status": "pending",
+      "risk": "medium",
+      "depends": [
+        "S02",
+        "S03"
+      ],
+      "demo": "Full pipeline: zone save creates/updates HA room device with template binary sensors. Aggregation strategy configurable per zone (OR/majority/no-change-on-tie). Room delete cleans up HA entities. Target count uses max.",
+      "created_at": "2026-03-31T07:04:23.285Z",
+      "completed_at": null,
+      "full_summary_md": "",
+      "full_uat_md": "",
+      "goal": "Wire S02's HA integration + S03's zone assignments into the complete room device lifecycle. Generate Jinja2 templates from zone assignment metadata with configurable aggregation.",
+      "success_criteria": "- Room save creates virtual HA device + template sensors from zone assignments\n- Aggregation strategy stored per zone on RoomConfig\n- Template Jinja2 correctly implements OR, majority, and no-change-on-tie strategies\n- Target count template uses max across covering sensors\n- Zone re-save updates existing templates\n- Room delete removes HA device + all template sensors\n- Uncovered zones create unavailable entities in HA",
+      "proof_level": "integration — full pipeline verified in Docker dev stack",
+      "integration_closure": "Complete backend pipeline. S05 adds frontend UI on top.",
+      "observability_impact": "Room device lifecycle events logged. Template sensor create/update/delete logged.",
+      "sequence": 0,
+      "replan_triggered_at": null
+    },
+    {
+      "milestone_id": "M004",
+      "id": "S05",
+      "title": "Frontend zone coverage visualization + config UI",
+      "status": "pending",
+      "risk": "low",
+      "depends": [
+        "S01",
+        "S04"
+      ],
+      "demo": "Room builder shows per-sensor zone coverage indicators with overlap percentages. Users can set aggregation strategy and overlap threshold per zone. Uncovered zones display warnings.",
+      "created_at": "2026-03-31T07:04:23.285Z",
+      "completed_at": null,
+      "full_summary_md": "",
+      "full_uat_md": "",
+      "goal": "Add the frontend UI for zone coverage visibility and aggregation configuration. Users can see which sensors cover which zones and configure the aggregation behavior.",
+      "success_criteria": "- Zone coverage per sensor visible in room builder (color-coded or indicator per zone per sensor)\n- Overlap percentage shown per sensor-zone pair\n- Aggregation strategy picker per zone (OR/majority/no-change-on-tie)\n- Overlap threshold slider/input per zone\n- Uncovered zones show warning indicator\n- All config changes persist through room save",
+      "proof_level": "behavioral — browser verification of UI elements and interactions",
+      "integration_closure": "Completes the milestone. All requirements covered.",
+      "observability_impact": "None — frontend-only changes",
       "sequence": 0,
       "replan_triggered_at": null
     }
@@ -1437,6 +1619,122 @@
       "observability_impact": "",
       "full_plan_md": "",
       "sequence": 0
+    },
+    {
+      "milestone_id": "M004",
+      "slice_id": "S01",
+      "id": "T01",
+      "title": "Built coordinateTransform.ts with room↔device-space pure transforms — all 34 unit tests pass covering 4 rotation quadrants, polygons, inverse round-trips, and edge cases",
+      "status": "complete",
+      "one_liner": "Built coordinateTransform.ts with room↔device-space pure transforms — all 34 unit tests pass covering 4 rotation quadrants, polygons, inverse round-trips, and edge cases",
+      "narrative": "Created coordinateTransform.ts in backend/src/domain/ with four exported functions: transformPoint/inverseTransformPoint for core point-level transforms using the +90° offset convention from buildRadarPath, transformZoneToDeviceSpace for both ZoneRect (center→begin/end bounding box) and ZonePolygon (vertex-wise), transformZoneToRoomSpace as inverse for S05 downstream use, and transformZonesToDeviceSpace as batch wrapper. Defined DeviceZoneRect, DeviceZonePolygon, DeviceZone output types with isDeviceZoneRect type guard. Wrote 34 tests across 7 describe blocks covering all four rotation quadrants, arbitrary angles, offset sensors, polygon transforms, inverse round-trips within 0.01mm tolerance, metadata preservation, and edge cases including negative rotation, >360° wrap, zero-dimension rects, and large coordinates.",
+      "verification_result": "Ran `npx vitest run src/__tests__/unit/coordinateTransform.test.ts` — all 34 tests passed in 7ms. Tests cover: transformPoint at 0°/90°/180°/270°/45° rotations plus offset and undefined defaults; inverseTransformPoint round-trips at all angles; ZoneRect→DeviceZoneRect begin/end conversion at multiple rotations; ZonePolygon vertex transforms; batch transform of mixed arrays; full inverse round-trip at 0°/90°/180°/270° for rects and 137° for polygon; edge cases for negative rotation, >360° wrap, zero-dimension, and large coordinates.",
+      "duration": "",
+      "completed_at": "2026-03-31T09:29:05.157Z",
+      "blocker_discovered": false,
+      "deviations": "Fixed one test expectation for 45° rotation — hand-calculated expected Y had wrong sign (sin(−135°) is negative). Implementation was correct.",
+      "known_issues": "None.",
+      "key_files": [
+        "everything-presence-mmwave-configurator/backend/src/domain/coordinateTransform.ts",
+        "everything-presence-mmwave-configurator/backend/src/__tests__/unit/coordinateTransform.test.ts"
+      ],
+      "key_decisions": [
+        "ZoneRect corners computed from center convention (matching frontend), not top-left (matching polygonUtils.ts)",
+        "Bounding-box approach for non-axis-aligned rotated rects — produces correct firmware-compatible axis-aligned zones",
+        "Conditional spread for enabled/label avoids undefined keys in output"
+      ],
+      "full_summary_md": "---\nid: T01\nparent: S01\nmilestone: M004\nkey_files:\n  - everything-presence-mmwave-configurator/backend/src/domain/coordinateTransform.ts\n  - everything-presence-mmwave-configurator/backend/src/__tests__/unit/coordinateTransform.test.ts\nkey_decisions:\n  - ZoneRect corners computed from center convention (matching frontend), not top-left (matching polygonUtils.ts)\n  - Bounding-box approach for non-axis-aligned rotated rects — produces correct firmware-compatible axis-aligned zones\n  - Conditional spread for enabled/label avoids undefined keys in output\nduration: \"\"\nverification_result: passed\ncompleted_at: 2026-03-31T09:29:05.158Z\nblocker_discovered: false\n---\n\n# T01: Built coordinateTransform.ts with room↔device-space pure transforms — all 34 unit tests pass covering 4 rotation quadrants, polygons, inverse round-trips, and edge cases\n\n**Built coordinateTransform.ts with room↔device-space pure transforms — all 34 unit tests pass covering 4 rotation quadrants, polygons, inverse round-trips, and edge cases**\n\n## What Happened\n\nCreated coordinateTransform.ts in backend/src/domain/ with four exported functions: transformPoint/inverseTransformPoint for core point-level transforms using the +90° offset convention from buildRadarPath, transformZoneToDeviceSpace for both ZoneRect (center→begin/end bounding box) and ZonePolygon (vertex-wise), transformZoneToRoomSpace as inverse for S05 downstream use, and transformZonesToDeviceSpace as batch wrapper. Defined DeviceZoneRect, DeviceZonePolygon, DeviceZone output types with isDeviceZoneRect type guard. Wrote 34 tests across 7 describe blocks covering all four rotation quadrants, arbitrary angles, offset sensors, polygon transforms, inverse round-trips within 0.01mm tolerance, metadata preservation, and edge cases including negative rotation, >360° wrap, zero-dimension rects, and large coordinates.\n\n## Verification\n\nRan `npx vitest run src/__tests__/unit/coordinateTransform.test.ts` — all 34 tests passed in 7ms. Tests cover: transformPoint at 0°/90°/180°/270°/45° rotations plus offset and undefined defaults; inverseTransformPoint round-trips at all angles; ZoneRect→DeviceZoneRect begin/end conversion at multiple rotations; ZonePolygon vertex transforms; batch transform of mixed arrays; full inverse round-trip at 0°/90°/180°/270° for rects and 137° for polygon; edge cases for negative rotation, >360° wrap, zero-dimension, and large coordinates.\n\n## Verification Evidence\n\n| # | Command | Exit Code | Verdict | Duration |\n|---|---------|-----------|---------|----------|\n| 1 | `npx vitest run src/__tests__/unit/coordinateTransform.test.ts` | 0 | ✅ pass | 3800ms |\n\n\n## Deviations\n\nFixed one test expectation for 45° rotation — hand-calculated expected Y had wrong sign (sin(−135°) is negative). Implementation was correct.\n\n## Known Issues\n\nNone.\n\n## Files Created/Modified\n\n- `everything-presence-mmwave-configurator/backend/src/domain/coordinateTransform.ts`\n- `everything-presence-mmwave-configurator/backend/src/__tests__/unit/coordinateTransform.test.ts`\n",
+      "description": "Build `coordinateTransform.ts` in `backend/src/domain/` with pure functions that translate zone coordinates from room-space to device-space.\n\n## Context\n\nThe frontend uses center-based ZoneRect (x,y = center, width/height = extents) and ZonePolygon (vertices array). Sensors have a DevicePlacement with x, y, rotationDeg. The transform must:\n1. Translate zone coordinates relative to the sensor position (subtract sensor x,y)\n2. Rotate by negative sensor angle to undo the sensor's orientation\n3. Use the +90° rotation offset convention: `effectiveAngleRad = (rotationDeg + 90) * π / 180` — this matches `buildRadarPath` in `frontend/src/components/canvas/geometry.ts` where 0° means sensor forward is +Y\n4. Output device-space coordinates in begin/end format (beginX, endX, beginY, endY) for ZoneRect, suitable for the downstream zoneWriter\n\n## Key type info from `backend/src/domain/types.ts`\n- `ZoneRect`: `{ id, type, x, y, width, height, enabled?, label? }` — x,y is CENTER\n- `ZonePolygon`: `{ id, type, vertices: Point[], enabled?, label? }` — vertices in room-space\n- `Point`: `{ x: number, y: number }`\n- `DevicePlacement`: `{ x, y, rotationDeg? }`\n- `isZoneRect(zone)` / `isZonePolygon(zone)` — type guards\n- All coordinates are in mm\n\n## Important: rectToPolygon convention mismatch\n`polygonUtils.ts:rectToPolygon()` treats ZoneRect x,y as top-left corner. The frontend treats x,y as center. The transform must use the CENTER convention (matching frontend) — do NOT use rectToPolygon for ZoneRect corner computation.\n\n## Steps\n1. Create `backend/src/domain/coordinateTransform.ts`\n2. Define output types: `DeviceZoneRect { beginX, endX, beginY, endY, type, id, enabled?, label? }` and `DeviceZonePolygon { vertices: Point[], type, id, enabled?, label? }`\n3. Implement `transformPoint(point: Point, sensorPlacement: DevicePlacement): Point` — translate then rotate\n4. Implement `transformZoneToDeviceSpace(zone: Zone, sensorPlacement: DevicePlacement): DeviceZoneRect | DeviceZonePolygon`\n5. Implement `transformZoneToRoomSpace(deviceZone, sensorPlacement)` — inverse transform for S05 use\n6. Implement batch helper: `transformZonesToDeviceSpace(zones: Zone[], sensorPlacement: DevicePlacement)`\n7. Create `backend/src/__tests__/unit/coordinateTransform.test.ts` with tests:\n   - Identity transform: sensor at origin with 0° rotation → output matches input (with center→begin/end conversion for rect)\n   - 90° rotation: verify coordinates rotate correctly\n   - 180° rotation: verify sign flip\n   - 270° rotation: verify\n   - Arbitrary angle (e.g., 45°): verify trigonometry\n   - Sensor at offset position (not origin): verify translation\n   - ZonePolygon transform: all vertices transform correctly\n   - Inverse transform round-trips: transform → inverse → original (within floating point tolerance)\n   - Edge case: rotationDeg undefined defaults to 0°\n\n## Must-Haves\n- [ ] `transformPoint` correctly applies translate-then-rotate with +90° offset\n- [ ] Rotation direction is NEGATIVE sensor angle (room→device undoes sensor rotation)\n- [ ] ZoneRect center-based input → begin/end output conversion is correct\n- [ ] Inverse transform round-trips to within 0.01mm tolerance\n- [ ] All unit tests pass",
+      "estimate": "1h",
+      "files": [
+        "everything-presence-mmwave-configurator/backend/src/domain/coordinateTransform.ts",
+        "everything-presence-mmwave-configurator/backend/src/__tests__/unit/coordinateTransform.test.ts"
+      ],
+      "verify": "cd everything-presence-mmwave-configurator/backend && npx vitest run src/__tests__/unit/coordinateTransform.test.ts",
+      "inputs": [
+        "`everything-presence-mmwave-configurator/backend/src/domain/types.ts` — Zone, ZoneRect, ZonePolygon, Point, DevicePlacement, isZoneRect, isZonePolygon type definitions",
+        "`everything-presence-mmwave-configurator/frontend/src/components/canvas/geometry.ts` — reference for +90° rotation convention in buildRadarPath (line: `(rotationDeg + 90) * Math.PI / 180`)"
+      ],
+      "expected_output": [
+        "`everything-presence-mmwave-configurator/backend/src/domain/coordinateTransform.ts` — pure transform functions: transformPoint, transformZoneToDeviceSpace, transformZoneToRoomSpace, transformZonesToDeviceSpace",
+        "`everything-presence-mmwave-configurator/backend/src/__tests__/unit/coordinateTransform.test.ts` — unit tests covering identity, 4 rotation quadrants, offset sensor, polygon, inverse round-trip"
+      ],
+      "observability_impact": "",
+      "full_plan_md": "",
+      "sequence": 0
+    },
+    {
+      "milestone_id": "M004",
+      "slice_id": "S01",
+      "id": "T02",
+      "title": "Implement per-sensor zone coverage analyzer with grid-point sampling and unit tests",
+      "status": "pending",
+      "one_liner": "",
+      "narrative": "",
+      "verification_result": "",
+      "duration": "",
+      "completed_at": null,
+      "blocker_discovered": false,
+      "deviations": "",
+      "known_issues": "",
+      "key_files": [],
+      "key_decisions": [],
+      "full_summary_md": "",
+      "description": "Build `zoneCoverage.ts` in `backend/src/domain/` with pure functions that compute what percentage of each zone falls within each sensor's FOV cone.\n\n## Context\n\nThe existing frontend coverage check (`RoomBuilderPage.tsx:511-542`) uses vertex-in-cone to classify zones as full/partial/none for a single sensor. S01 needs to generalize this to:\n- N sensors per room\n- Numeric overlap percentage (0.0–1.0) instead of coarse classification\n- Grid-point sampling for better precision than vertex-only checks\n\nThe algorithm: scatter a grid of sample points across the zone area, check each against the sensor's FOV cone (range + angle), count what fraction falls inside.\n\n## Key math (from frontend reference)\n- Sensor FOV cone is defined by: position (x,y), rotation (+90° offset), half-angle (fovDeg/2), max range (maxRangeMeters * 1000 → mm)\n- Point-in-cone test: `distance <= maxRange AND |angleDiff| <= halfFov` where angleDiff is normalized to [-π, π]\n- The +90° offset means rotationDeg=0 → sensor points along +Y axis\n\n## Profile data structure\nDevice profiles store FOV and range in `limits`: `{ maxZones, maxRangeMeters, fieldOfViewDegrees, ... }`. Profiles are loaded from `config/device-profiles/*.json`.\n\n## Steps\n1. Create `backend/src/domain/zoneCoverage.ts`\n2. Implement `isPointInCone(point: Point, sensorPos: Point, rotationDeg: number, fovDeg: number, maxRangeMm: number): boolean` — the core geometric test\n3. Implement `getZoneSamplePoints(zone: Zone, gridSize: number): Point[]` — generates grid points within the zone boundary. For ZoneRect (center-based): grid within (x±width/2, y±height/2). For ZonePolygon: grid within bounding box, filtered to points inside the polygon using ray-casting point-in-polygon test.\n4. Implement `computeZoneCoverage(zone: Zone, sensorPlacement: DevicePlacement, fovDeg: number, maxRangeMm: number, gridSize?: number): number` — returns overlap fraction 0.0–1.0\n5. Implement batch helper: `computeAllCoverage(zones: Zone[], sensors: Array<{ placement: DevicePlacement, fovDeg: number, maxRangeMm: number }>): number[][]` — returns coverage matrix [zoneIndex][sensorIndex]\n6. Need a backend `isPointInPolygon` — either import from a shared location or implement locally (ray-casting algorithm, same as `frontend/src/components/canvas/geometry.ts:isPointInPolygon`)\n7. Create `backend/src/__tests__/unit/zoneCoverage.test.ts` with tests:\n   - Zone fully inside cone → coverage ≈ 1.0 (within grid precision)\n   - Zone fully outside cone (behind sensor) → coverage ≈ 0.0\n   - Zone beyond max range → coverage ≈ 0.0\n   - Zone straddling cone edge → coverage between 0.0 and 1.0\n   - Zone at exact max range boundary → partial coverage\n   - ZonePolygon coverage (triangle inside cone)\n   - Batch coverage: 2 zones × 2 sensors → correct 2×2 matrix\n   - Grid size affects precision: larger grid → more accurate result\n   - Sensor with rotationDeg undefined → defaults to 0°\n\n## Must-Haves\n- [ ] `isPointInCone` uses +90° rotation offset matching frontend convention\n- [ ] Angle difference normalization handles wrap-around correctly\n- [ ] ZoneRect sample points use CENTER-based convention (x,y = center)\n- [ ] ZonePolygon sample points filtered by ray-casting point-in-polygon\n- [ ] Grid size is configurable with sensible default (10)\n- [ ] All unit tests pass",
+      "estimate": "1h",
+      "files": [
+        "everything-presence-mmwave-configurator/backend/src/domain/zoneCoverage.ts",
+        "everything-presence-mmwave-configurator/backend/src/__tests__/unit/zoneCoverage.test.ts"
+      ],
+      "verify": "cd everything-presence-mmwave-configurator/backend && npx vitest run src/__tests__/unit/zoneCoverage.test.ts",
+      "inputs": [
+        "`everything-presence-mmwave-configurator/backend/src/domain/types.ts` — Zone, ZoneRect, ZonePolygon, Point, DevicePlacement, isZoneRect, isZonePolygon",
+        "`everything-presence-mmwave-configurator/frontend/src/components/canvas/geometry.ts` — reference isPointInPolygon implementation (ray-casting) and +90° rotation convention",
+        "`everything-presence-mmwave-configurator/frontend/src/pages/RoomBuilderPage.tsx` — lines 511-542, reference single-sensor coverage computation with vertex-in-cone"
+      ],
+      "expected_output": [
+        "`everything-presence-mmwave-configurator/backend/src/domain/zoneCoverage.ts` — pure functions: isPointInCone, getZoneSamplePoints, computeZoneCoverage, computeAllCoverage",
+        "`everything-presence-mmwave-configurator/backend/src/__tests__/unit/zoneCoverage.test.ts` — unit tests covering full/none/partial coverage, polygon zones, batch matrix, grid precision"
+      ],
+      "observability_impact": "",
+      "full_plan_md": "",
+      "sequence": 0
+    },
+    {
+      "milestone_id": "M004",
+      "slice_id": "S01",
+      "id": "T03",
+      "title": "Implement zone-to-device slot assignment engine with EP One exclusion and unit tests",
+      "status": "pending",
+      "one_liner": "",
+      "narrative": "",
+      "verification_result": "",
+      "duration": "",
+      "completed_at": null,
+      "blocker_discovered": false,
+      "deviations": "",
+      "known_issues": "",
+      "key_files": [],
+      "key_decisions": [],
+      "full_summary_md": "",
+      "description": "Build `zoneAssignment.ts` in `backend/src/domain/` with pure functions that map room-level zones to specific device zone slots, respecting profile limits and coverage thresholds.\n\n## Context\n\nEach EP device has fixed slot pools:\n- **EP Lite**: 4 regular (zone1-zone4), 2 exclusion (exclusion1-exclusion2), 2 entry (entry1-entry2)\n- **EP Pro**: 4 regular, 2 exclusion, 0 entry\n- **EP One**: 0 regular, 0 exclusion, 0 entry (EXCLUDED entirely — R012)\n\nProfile data from `config/device-profiles/*.json` — limits are in `profile.limits`: `{ maxZones, maxExclusionZones?, maxEntryZones?, ... }`\n\nThe assignment engine takes room zones, sensors with their profiles, and a coverage matrix (from `zoneCoverage.ts`), then assigns each zone to device slots on sensors that cover it above a threshold.\n\n## Zone type → slot pool mapping\n- `zone.type === 'regular'` → regular zone slots (zone1, zone2, zone3, zone4) — capped by `maxZones`\n- `zone.type === 'exclusion'` → exclusion slots (exclusion1, exclusion2) — capped by `maxExclusionZones` (default 0)\n- `zone.type === 'entry'` → entry slots (entry1, entry2) — capped by `maxEntryZones` (default 0)\n\n## Steps\n1. Create `backend/src/domain/zoneAssignment.ts`\n2. Define types:\n   - `SlotId`: `'zone1' | 'zone2' | 'zone3' | 'zone4' | 'exclusion1' | 'exclusion2' | 'entry1' | 'entry2'`\n   - `ZoneAssignment`: `{ zoneId: string, sensorDeviceId: string, slotId: SlotId, coverage: number }`\n   - `AssignmentResult`: `{ assignments: ZoneAssignment[], unassigned: Array<{ zoneId: string, reason: string }>, warnings: string[] }`\n   - `SensorProfile`: `{ deviceId: string, placement: DevicePlacement, maxZones: number, maxExclusionZones: number, maxEntryZones: number, fovDeg: number, maxRangeMm: number }`\n3. Implement `assignZonesToDevices(zones: Zone[], sensors: SensorProfile[], coverageMatrix: number[][], overlapThreshold?: number): AssignmentResult`\n   - Default overlapThreshold = 0.1 (10% coverage minimum)\n   - For each zone: find sensors where coverage >= threshold\n   - For each qualifying sensor: allocate the next available slot in the correct pool\n   - If no sensor covers a zone above threshold: add to `unassigned` with reason\n   - If a sensor's slot pool is full: add warning and skip that sensor for that zone\n   - Skip sensors with maxZones=0 entirely (EP One — R012)\n4. Implement `getAvailableSlots(zoneType: Zone['type'], profile: SensorProfile, usedSlots: Set<SlotId>): SlotId[]`\n5. Create `backend/src/__tests__/unit/zoneAssignment.test.ts` with tests:\n   - Single sensor covers all zones → sequential slot allocation (zone1, zone2, zone3, zone4)\n   - Multi-sensor overlap: same zone assigned to multiple sensors' slots\n   - Zone below coverage threshold → unassigned with reason\n   - EP One sensor (maxZones=0) → completely skipped, no error\n   - Slot overflow: 5 regular zones with 4 slots → 5th goes to unassigned\n   - Exclusion zone → uses exclusion1/exclusion2 slots, not regular slots\n   - Entry zone → uses entry1/entry2 slots, not regular slots\n   - EP Pro with 0 entry zones → entry zones go to unassigned\n   - Mixed zone types: regular + exclusion + entry allocated from separate pools\n   - Empty inputs: no zones → empty result; no sensors → all unassigned\n   - Custom threshold: 0.5 threshold filters out low-coverage sensors\n\n## Must-Haves\n- [ ] Zone types route to correct slot pools (regular/exclusion/entry)\n- [ ] EP One devices (maxZones=0) are completely excluded from assignment\n- [ ] Slot overflow produces unassigned entries with clear reason, not an error\n- [ ] Coverage threshold is configurable with sensible default\n- [ ] All unit tests pass",
+      "estimate": "1h",
+      "files": [
+        "everything-presence-mmwave-configurator/backend/src/domain/zoneAssignment.ts",
+        "everything-presence-mmwave-configurator/backend/src/__tests__/unit/zoneAssignment.test.ts"
+      ],
+      "verify": "cd everything-presence-mmwave-configurator/backend && npx vitest run src/__tests__/unit/zoneAssignment.test.ts",
+      "inputs": [
+        "`everything-presence-mmwave-configurator/backend/src/domain/types.ts` — Zone, ZoneRect, ZonePolygon, Point, DevicePlacement",
+        "`everything-presence-mmwave-configurator/backend/src/domain/zoneCoverage.ts` — computeAllCoverage return type (number[][] coverage matrix)"
+      ],
+      "expected_output": [
+        "`everything-presence-mmwave-configurator/backend/src/domain/zoneAssignment.ts` — pure functions: assignZonesToDevices, getAvailableSlots, types SlotId/ZoneAssignment/AssignmentResult/SensorProfile",
+        "`everything-presence-mmwave-configurator/backend/src/__tests__/unit/zoneAssignment.test.ts` — unit tests covering slot allocation, EP One exclusion, overflow, separate slot pools, threshold filtering"
+      ],
+      "observability_impact": "",
+      "full_plan_md": "",
+      "sequence": 0
     }
   ],
   "decisions": [
@@ -1546,6 +1844,18 @@
       "rationale": "Both trash icon and DeviceEditor onUnlink need the same removal logic. Keeping singular legacy fields in sync with sensors[0] maintains backward compat with any code still reading deviceId/profileId/devicePlacement.",
       "revisable": "Yes",
       "made_by": "agent",
+      "superseded_by": null
+    },
+    {
+      "seq": 18,
+      "id": "D010",
+      "when_context": "M004 pre-work",
+      "scope": "pattern",
+      "decision": "Unified item editor visibility pattern",
+      "choice": "Removed showDeviceEditor state, device editor now gates on selectedSensor derived from selectedItem (same pattern as furniture/door/zone editors)",
+      "rationale": "Device editor had a separate showDeviceEditor boolean while all other item editors derived visibility from selectedItem. User identified this as unnecessary special-casing. All item editors now use the same pattern: selectedItem drives visibility, onClose clears selectedItem.",
+      "revisable": "No",
+      "made_by": "collaborative",
       "superseded_by": null
     }
   ],
@@ -1879,6 +2189,17 @@
       "verdict": "✅ pass",
       "duration_ms": 50,
       "created_at": "2026-03-31T05:44:53.970Z"
+    },
+    {
+      "id": 31,
+      "task_id": "T01",
+      "slice_id": "S01",
+      "milestone_id": "M004",
+      "command": "npx vitest run src/__tests__/unit/coordinateTransform.test.ts",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 3800,
+      "created_at": "2026-03-31T09:29:05.157Z"
     }
   ]
 }

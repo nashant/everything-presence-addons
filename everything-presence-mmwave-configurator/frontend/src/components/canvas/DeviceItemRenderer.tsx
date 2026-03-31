@@ -28,6 +28,9 @@ export interface DeviceRenderParams {
   iconUrl?: string;
   /** Primary color for radar cone and icon fallback (default: '#22c55e') */
   color?: string;
+  /** When true, render the radar cone as a faint outline instead of filled — used
+   *  for non-selected sensors in multi-sensor rooms so the active cone stands out. */
+  dimmed?: boolean;
   /** Zoom level — used to keep icon constant screen size */
   zoom: number;
   /** Convert world coords to canvas coords */
@@ -53,7 +56,7 @@ function getIconSizes(zoom: number) {
 // ---------------------------------------------------------------------------
 
 export function renderDeviceNonInteractive(params: DeviceRenderParams): React.ReactNode {
-  const { placement, fovDeg, maxRangeMeters, wallPoints, clipToWalls, showRadar, iconUrl, color = '#22c55e', zoom, toCanvasCoord } = params;
+  const { placement, fovDeg, maxRangeMeters, wallPoints, clipToWalls, showRadar, iconUrl, color = '#22c55e', dimmed, zoom, toCanvasCoord } = params;
   const { x: px, y: py } = toCanvasCoord(placement);
   const rotationRad = (((placement.rotationDeg ?? 0) + 90) * Math.PI) / 180;
   const { iconSize, radius, dirLen, dirWidth, strokeW } = getIconSizes(zoom);
@@ -61,17 +64,19 @@ export function renderDeviceNonInteractive(params: DeviceRenderParams): React.Re
   const radarPoints = buildRadarPath({ placement, fovDeg, maxRangeMeters, wallPoints, clipToWalls });
   const pathData = radarPointsToPathData(radarPoints, toCanvasCoord);
 
-  // Derive semi-transparent fill from the color (append 22 for ~13% opacity)
-  const radarFill = `${color}22`;
+  // Dimmed: outline-only with low opacity.  Normal: semi-transparent fill.
+  const radarFill = dimmed ? 'none' : `${color}22`;
+  const radarStroke = dimmed ? `${color}55` : color;
+  const radarStrokeWidth = dimmed ? 1 : 1.5;
 
   return (
-    <g style={{ pointerEvents: 'none' }}>
+    <g style={{ pointerEvents: 'none', opacity: dimmed ? 0.5 : 1 }}>
       {showRadar && (
         <path
           d={pathData}
           fill={radarFill}
-          stroke={color}
-          strokeWidth={1.5}
+          stroke={radarStroke}
+          strokeWidth={radarStrokeWidth}
           vectorEffect="non-scaling-stroke"
           style={{ pointerEvents: 'none' }}
         />
@@ -132,7 +137,7 @@ export interface DeviceInteractiveParams extends DeviceRenderParams {
 export function renderDeviceInteractive(params: DeviceInteractiveParams): React.ReactNode {
   const {
     placement, fovDeg, maxRangeMeters, wallPoints, clipToWalls,
-    showRadar, iconUrl, color = '#22c55e', zoom, toCanvasCoord,
+    showRadar, iconUrl, color = '#22c55e', dimmed, zoom, toCanvasCoord,
     canDrag, onDragStart, onSelect, selected,
   } = params;
   const { x: px, y: py } = toCanvasCoord(placement);
@@ -142,8 +147,10 @@ export function renderDeviceInteractive(params: DeviceInteractiveParams): React.
   const radarPoints = buildRadarPath({ placement, fovDeg, maxRangeMeters, wallPoints, clipToWalls });
   const pathData = radarPointsToPathData(radarPoints, toCanvasCoord);
 
-  // Derive semi-transparent fill from the color
-  const radarFill = `${color}22`;
+  // Dimmed: outline-only with low opacity.  Normal/selected: semi-transparent fill.
+  const radarFill = dimmed ? 'none' : `${color}22`;
+  const radarStroke = dimmed ? `${color}55` : color;
+  const radarStrokeWidth = dimmed ? 1 : 1.5;
 
   const handleMouseDown = () => {
     onSelect();
@@ -152,13 +159,13 @@ export function renderDeviceInteractive(params: DeviceInteractiveParams): React.
   };
 
   return (
-    <g>
+    <g style={dimmed ? { opacity: 0.5 } : undefined}>
       {showRadar && (
         <path
           d={pathData}
           fill={radarFill}
-          stroke={color}
-          strokeWidth={1.5}
+          stroke={radarStroke}
+          strokeWidth={radarStrokeWidth}
           vectorEffect="non-scaling-stroke"
           style={{ pointerEvents: 'none' }}
         />
