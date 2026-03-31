@@ -6,7 +6,7 @@ import { furnitureRenderer } from './canvas/FurnitureItemRenderer';
 import { zoneRenderer } from './canvas/ZoneItemRenderer';
 import { renderDeviceNonInteractive, renderDeviceInteractive } from './canvas/DeviceItemRenderer';
 import { renderDoors } from './canvas/DoorItemRenderer';
-import type { ActiveDrag, CanvasContext, FurnitureDrag, ZoneDrag } from './canvas/types';
+import type { ActiveDrag, CanvasContext, FurnitureDrag, ZoneDrag, SensorRenderInfo } from './canvas/types';
 
 
 export interface Point {
@@ -86,6 +86,11 @@ interface RoomCanvasProps {
   showZones?: boolean;
   roomShellFillMode?: 'overlay' | 'material';
   floorMaterial?: string;
+  // Multi-sensor support
+  sensorPlacements?: SensorRenderInfo[];
+  selectedSensorId?: string;
+  onSensorChange?: (sensorId: string, placement: DevicePlacement) => void;
+  onSensorSelect?: (sensorId: string) => void;
   // Visibility toggles
   showWalls?: boolean;
   showFurniture?: boolean;
@@ -249,6 +254,10 @@ export const RoomCanvas: React.FC<RoomCanvasProps> = ({
   showZones = true,
   roomShellFillMode = 'overlay',
   floorMaterial = 'none',
+  sensorPlacements,
+  selectedSensorId: _selectedSensorId,  // Reserved for future visual selection highlighting
+  onSensorChange,
+  onSensorSelect,
   showWalls = true,
   showFurniture = true,
   showDoors = true,
@@ -285,6 +294,25 @@ export const RoomCanvas: React.FC<RoomCanvasProps> = ({
 
   // Helper: check if a world-coordinate point is within the sensor's detection cone
   const isPointInSensorRange = useCallback((pt: Point): boolean => {
+    // Multi-sensor mode: check if point is in range of ANY sensor
+    if (sensorPlacements && sensorPlacements.length > 0) {
+      return sensorPlacements.some((sensor) => {
+        if (!sensor.placement) return false;
+        const dx = pt.x - sensor.placement.x;
+        const dy = pt.y - sensor.placement.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        const rangeLimit = sensor.maxRangeMeters * 1000;
+        if (dist > rangeLimit) return false;
+        const rotationRad = (((sensor.placement.rotationDeg ?? 0) + 90) * Math.PI) / 180;
+        const halfFov = (sensor.fovDeg * Math.PI) / 360;
+        const ptAngle = Math.atan2(dy, dx);
+        let diff = ptAngle - rotationRad;
+        while (diff > Math.PI) diff -= 2 * Math.PI;
+        while (diff < -Math.PI) diff += 2 * Math.PI;
+        return Math.abs(diff) <= halfFov;
+      });
+    }
+    // Single-device fallback
     if (!devicePlacement) return true; // no sensor placed → assume in range
     const dx = pt.x - safePlacement.x;
     const dy = pt.y - safePlacement.y;
@@ -300,7 +328,7 @@ export const RoomCanvas: React.FC<RoomCanvasProps> = ({
     while (diff > Math.PI) diff -= 2 * Math.PI;
     while (diff < -Math.PI) diff += 2 * Math.PI;
     return Math.abs(diff) <= halfFov;
-  }, [devicePlacement, safePlacement.x, safePlacement.y, safePlacement.rotationDeg, effectiveMaxRange, effectiveFov]);
+  }, [devicePlacement, safePlacement.x, safePlacement.y, safePlacement.rotationDeg, effectiveMaxRange, effectiveFov, sensorPlacements]);
 
   // Helper: compute zone coverage status ('full' | 'partial' | 'none')
   const getZoneCoverage = useCallback((zone: Zone): 'full' | 'partial' | 'none' => {
@@ -447,15 +475,29 @@ export const RoomCanvas: React.FC<RoomCanvasProps> = ({
         zoneRenderer.onDragMove(pt, activeDrag as ZoneDrag, zones, canvasContext, onZoneChange);
         return;
       }
-      if (mode === 'device-drag' && onDeviceChange) {
+      if (mode === 'device-drag') {
         const snapped = snapPoint(pt);
         const clamped = safePoints.length >= 3
           ? constrainPointToPolygon(snapped, safePoints)
           : snapped;
-        onDeviceChange({
-          ...safePlacement,
-          ...clamped,
-        });
+        // Multi-sensor drag: find and update the specific sensor
+        if (activeDrag.sensorId && sensorPlacements && onSensorChange) {
+          const sensor = sensorPlacements.find((s) => s.id === activeDrag.sensorId);
+          if (sensor) {
+            onSensorChange(activeDrag.sensorId, {
+              ...sensor.placement,
+              ...clamped,
+            });
+          }
+          return;
+        }
+        // Single-device fallback
+        if (onDeviceChange) {
+          onDeviceChange({
+            ...safePlacement,
+            ...clamped,
+          });
+        }
         return;
       }
     }
@@ -853,23 +895,72 @@ export const RoomCanvas: React.FC<RoomCanvasProps> = ({
           roomShellPoints: safePoints,
           devicePlacement: safePlacement,
           fieldOfViewDeg: effectiveFov,
-          deviceElement: (!deviceInteractive && showDevice && devicePlacement && safePlacement)
-            ? renderDeviceNonInteractive({
-                placement: safePlacement,
-                fovDeg: effectiveFov,
-                maxRangeMeters: effectiveMaxRange,
-                wallPoints: safePoints,
-                clipToWalls: !!clipRadarToWalls,
-                showRadar: !!showRadar,
-                iconUrl: deviceIconUrl,
-                zoom: effectiveZoom,
-                toCanvasCoord,
-              })
+          deviceElement: (!deviceInteractive && showDevice)
+            ? (sensorPlacements && sensorPlacements.length > 0
+              ? <>
+                  {sensorPlacements.map((sensor) => (
+                    <React.Fragment key={sensor.id}>
+                      {renderDeviceNonInteractive({
+                        placement: sensor.placement,
+                        fovDeg: sensor.fovDeg,
+                        maxRangeMeters: sensor.maxRangeMeters,
+                        wallPoints: safePoints,
+                        clipToWalls: !!clipRadarToWalls,
+                        showRadar: !!showRadar,
+                        iconUrl: sensor.iconUrl,
+                        color: sensor.color,
+                        zoom: effectiveZoom,
+                        toCanvasCoord,
+                      })}
+                    </React.Fragment>
+                  ))}
+                </>
+              : (devicePlacement && safePlacement
+                ? renderDeviceNonInteractive({
+                    placement: safePlacement,
+                    fovDeg: effectiveFov,
+                    maxRangeMeters: effectiveMaxRange,
+                    wallPoints: safePoints,
+                    clipToWalls: !!clipRadarToWalls,
+                    showRadar: !!showRadar,
+                    iconUrl: deviceIconUrl,
+                    zoom: effectiveZoom,
+                    toCanvasCoord,
+                  })
+                : undefined
+              )
+            )
             : undefined,
         })}
 
         {/* Device rendering - when interactive (Room Builder), render AFTER overlay so device can be dragged */}
-        {deviceInteractive && showDevice && devicePlacement && safePlacement &&
+        {deviceInteractive && showDevice && sensorPlacements && sensorPlacements.length > 0 &&
+          sensorPlacements.map((sensor) => (
+            <React.Fragment key={sensor.id}>
+              {renderDeviceInteractive({
+                placement: sensor.placement,
+                fovDeg: sensor.fovDeg,
+                maxRangeMeters: sensor.maxRangeMeters,
+                wallPoints: safePoints,
+                clipToWalls: !!clipRadarToWalls,
+                showRadar: !!showRadar,
+                iconUrl: sensor.iconUrl,
+                color: sensor.color,
+                zoom: effectiveZoom,
+                toCanvasCoord,
+                canDrag: !!onSensorChange,
+                sensorId: sensor.id,
+                onDragStart: () => {
+                  setActiveDrag({ mode: 'device-drag', sensorId: sensor.id });
+                  onDragStateChange?.(true);
+                },
+                onSelect: () => onSensorSelect?.(sensor.id),
+              })}
+            </React.Fragment>
+          ))
+        }
+        {/* Single-device fallback - when no sensorPlacements, use original devicePlacement path */}
+        {deviceInteractive && showDevice && !sensorPlacements && devicePlacement && safePlacement &&
           renderDeviceInteractive({
             placement: safePlacement,
             fovDeg: effectiveFov,

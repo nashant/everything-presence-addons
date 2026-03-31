@@ -26,6 +26,8 @@ export interface DeviceRenderParams {
   clipToWalls: boolean;
   showRadar: boolean;
   iconUrl?: string;
+  /** Primary color for radar cone and icon fallback (default: '#22c55e') */
+  color?: string;
   /** Zoom level — used to keep icon constant screen size */
   zoom: number;
   /** Convert world coords to canvas coords */
@@ -51,7 +53,7 @@ function getIconSizes(zoom: number) {
 // ---------------------------------------------------------------------------
 
 export function renderDeviceNonInteractive(params: DeviceRenderParams): React.ReactNode {
-  const { placement, fovDeg, maxRangeMeters, wallPoints, clipToWalls, showRadar, iconUrl, zoom, toCanvasCoord } = params;
+  const { placement, fovDeg, maxRangeMeters, wallPoints, clipToWalls, showRadar, iconUrl, color = '#22c55e', zoom, toCanvasCoord } = params;
   const { x: px, y: py } = toCanvasCoord(placement);
   const rotationRad = (((placement.rotationDeg ?? 0) + 90) * Math.PI) / 180;
   const { iconSize, radius, dirLen, dirWidth, strokeW } = getIconSizes(zoom);
@@ -59,13 +61,16 @@ export function renderDeviceNonInteractive(params: DeviceRenderParams): React.Re
   const radarPoints = buildRadarPath({ placement, fovDeg, maxRangeMeters, wallPoints, clipToWalls });
   const pathData = radarPointsToPathData(radarPoints, toCanvasCoord);
 
+  // Derive semi-transparent fill from the color (append 22 for ~13% opacity)
+  const radarFill = `${color}22`;
+
   return (
     <g style={{ pointerEvents: 'none' }}>
       {showRadar && (
         <path
           d={pathData}
-          fill="#22c55e22"
-          stroke="#22c55e"
+          fill={radarFill}
+          stroke={color}
           strokeWidth={1.5}
           vectorEffect="non-scaling-stroke"
           style={{ pointerEvents: 'none' }}
@@ -86,8 +91,8 @@ export function renderDeviceNonInteractive(params: DeviceRenderParams): React.Re
             cx={px}
             cy={py}
             r={radius}
-            fill="#3b82f6"
-            stroke="#1d4ed8"
+            fill={color}
+            stroke={color}
             strokeWidth={strokeW}
             style={{ cursor: 'default', pointerEvents: 'none' }}
           />
@@ -118,12 +123,14 @@ export interface DeviceInteractiveParams extends DeviceRenderParams {
   onDragStart: () => void;
   /** Called to select the device */
   onSelect: () => void;
+  /** Sensor identifier for multi-sensor drag isolation */
+  sensorId?: string;
 }
 
 export function renderDeviceInteractive(params: DeviceInteractiveParams): React.ReactNode {
   const {
     placement, fovDeg, maxRangeMeters, wallPoints, clipToWalls,
-    showRadar, iconUrl, zoom, toCanvasCoord,
+    showRadar, iconUrl, color = '#22c55e', zoom, toCanvasCoord,
     canDrag, onDragStart, onSelect,
   } = params;
   const { x: px, y: py } = toCanvasCoord(placement);
@@ -132,6 +139,9 @@ export function renderDeviceInteractive(params: DeviceInteractiveParams): React.
 
   const radarPoints = buildRadarPath({ placement, fovDeg, maxRangeMeters, wallPoints, clipToWalls });
   const pathData = radarPointsToPathData(radarPoints, toCanvasCoord);
+
+  // Derive semi-transparent fill from the color
+  const radarFill = `${color}22`;
 
   const handleMouseDown = () => {
     onSelect();
@@ -144,8 +154,8 @@ export function renderDeviceInteractive(params: DeviceInteractiveParams): React.
       {showRadar && (
         <path
           d={pathData}
-          fill="#22c55e22"
-          stroke="#22c55e"
+          fill={radarFill}
+          stroke={color}
           strokeWidth={1.5}
           vectorEffect="non-scaling-stroke"
           style={{ pointerEvents: 'none' }}
@@ -167,8 +177,8 @@ export function renderDeviceInteractive(params: DeviceInteractiveParams): React.
             cx={px}
             cy={py}
             r={radius}
-            fill="#3b82f6"
-            stroke="#1d4ed8"
+            fill={color}
+            stroke={color}
             strokeWidth={strokeW}
             onMouseDown={handleMouseDown}
             style={{ cursor: canDrag ? 'grab' : 'pointer' }}

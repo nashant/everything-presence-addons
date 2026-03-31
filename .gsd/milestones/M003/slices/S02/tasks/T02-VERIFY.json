@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "taskId": "T02",
+  "unitId": "M003/S02/T02",
+  "timestamp": 1774933141101,
+  "passed": false,
+  "discoverySource": "task-plan",
+  "checks": [
+    {
+      "command": "cd everything-presence-mmwave-configurator",
+      "exitCode": 0,
+      "durationMs": 2,
+      "verdict": "pass"
+    },
+    {
+      "command": "npx tsc --noEmit — no new errors introduced. SensorAttachment and SensorRenderInfo properly exported.",
+      "exitCode": 1,
+      "durationMs": 610,
+      "verdict": "fail"
+    }
+  ],
+  "retryAttempt": 1,
+  "maxRetries": 2
+}

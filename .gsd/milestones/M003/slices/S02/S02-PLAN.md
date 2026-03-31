@@ -28,7 +28,7 @@ Steps:
   - Estimate: 20m
   - Files: frontend/src/api/types.ts, frontend/src/components/canvas/types.ts
   - Verify: cd everything-presence-mmwave-configurator && npx tsc --noEmit — no new errors introduced. SensorAttachment and SensorRenderInfo properly exported.
-- [ ] **T03: Parameterize DeviceItemRenderer colors + RoomCanvas multi-sensor rendering** — Make DeviceItemRenderer accept a color parameter (replacing hardcoded #22c55e/#3b82f6), then update RoomCanvas to accept and render an array of sensor placements with per-sensor drag.
+- [x] **T03: Parameterized DeviceItemRenderer color prop replacing hardcoded values, added sensorPlacements multi-sensor rendering loop and per-sensor drag handling to RoomCanvas** — Make DeviceItemRenderer accept a color parameter (replacing hardcoded #22c55e/#3b82f6), then update RoomCanvas to accept and render an array of sensor placements with per-sensor drag.
 
 DeviceItemRenderer changes (frontend/src/components/canvas/DeviceItemRenderer.tsx):
 1. Add `color?: string` to `DeviceRenderParams` (default: '#22c55e')
