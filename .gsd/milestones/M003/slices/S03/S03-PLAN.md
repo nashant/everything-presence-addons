@@ -96,7 +96,7 @@ T01 delivered the Devices panel with sensor cards and Add Device flow. This task
   - Estimate: 1h
   - Files: everything-presence-mmwave-configurator/frontend/src/pages/RoomBuilderPage.tsx, everything-presence-mmwave-configurator/frontend/src/components/DeviceEditor.tsx, everything-presence-mmwave-configurator/frontend/src/components/RoomCanvas.tsx, everything-presence-mmwave-configurator/frontend/src/components/canvas/DeviceItemRenderer.tsx
   - Verify: cd everything-presence-mmwave-configurator && npx tsc --noEmit 2>&1 | grep -E '(RoomBuilderPage|DeviceEditor|RoomCanvas|DeviceItemRenderer)\.tsx' | head -10; echo '---'; grep -c '_selectedSensorId' frontend/src/components/RoomCanvas.tsx; echo '(should be 0)'
-- [ ] **T03: Browser verification of complete multi-sensor device management flow** — ## Description
+- [x] **T03: All 6 browser verification scenarios pass end-to-end: sensor card rendering, Add Device flow, per-sensor selection with DeviceEditor, per-sensor remove, persistence after save/reload, and clean TypeScript compilation** — ## Description
 
 T01 and T02 implemented the full multi-sensor device management UI. This task verifies everything works end-to-end in a running browser, fixing any issues discovered.
 
