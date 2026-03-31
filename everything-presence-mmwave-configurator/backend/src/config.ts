@@ -1,6 +1,7 @@
 import path from 'path';
 import dotenv from 'dotenv';
 import fs from 'fs';
+import type { MqttConfig } from './ha/types.js';
 
 dotenv.config();
 
@@ -25,6 +26,7 @@ export interface AppConfig {
   ha: HaConfig;
   frontendDist: string | null;
   firmware: FirmwareConfig;
+  mqtt?: MqttConfig;
 }
 
 const DEFAULT_PORT = 42069;
@@ -111,6 +113,12 @@ const loadFirmwareConfig = (): FirmwareConfig => {
   };
 };
 
+const loadMqttConfig = (): MqttConfig | undefined => {
+  const brokerUrl = process.env.MQTT_BROKER_URL;
+  if (!brokerUrl) return undefined;
+  return { brokerUrl: trimTrailingSlash(brokerUrl) };
+};
+
 export const loadConfig = (): AppConfig => {
   const ha = detectHaConfig();
 
@@ -121,6 +129,7 @@ export const loadConfig = (): AppConfig => {
       ? path.resolve(process.env.FRONTEND_DIST)
       : DEFAULT_FRONTEND_DIST,
     firmware: loadFirmwareConfig(),
+    mqtt: loadMqttConfig(),
   };
 };
 

@@ -22,6 +22,10 @@ export type HaWsMessage =
   | { id: number; type: 'result'; success: boolean; result?: unknown }
   | { id: number; type: 'event'; event: HaStateChangedEvent };
 
+export interface MqttConfig {
+  brokerUrl: string;
+}
+
 export interface EntityRegistryEntry {
   entity_id: string;
   name: string | null;

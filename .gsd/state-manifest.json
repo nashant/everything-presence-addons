@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "exported_at": "2026-03-31T10:18:07.943Z",
+  "exported_at": "2026-03-31T10:50:36.656Z",
   "milestones": [
     {
       "id": "M001",
@@ -329,14 +329,14 @@
       "milestone_id": "M004",
       "id": "S01",
       "title": "Coordinate transform + zone coverage engine",
-      "status": "pending",
+      "status": "complete",
       "risk": "high",
       "depends": [],
       "demo": "Unit tests prove room-space → device-space transform is correct for all orientations. Coverage analysis returns per-sensor overlap percentages for each zone. Zone assignment maps zones to device slots respecting profile limits.",
       "created_at": "2026-03-31T07:04:23.284Z",
-      "completed_at": null,
-      "full_summary_md": "",
-      "full_uat_md": "",
+      "completed_at": "2026-03-31T10:20:27.668Z",
+      "full_summary_md": "---\nid: S01\nparent: M004\nmilestone: M004\nprovides:\n  - coordinateTransform.ts: transformZoneToDeviceSpace(), transformZoneToRoomSpace(), transformZonesToDeviceSpace() — consumed by S03 (zone writes) and S05 (coverage visualization)\n  - zoneCoverage.ts: computeAllCoverage() → number[][] matrix — consumed by S03 (zone assignment input) and S05 (coverage indicators)\n  - zoneAssignment.ts: assignZonesToDevices() → AssignmentResult with assignments[], unassigned[], warnings[] — consumed by S03 (per-device zone writes) and S04 (template sensor creation)\n  - Type exports: DeviceZoneRect, DeviceZonePolygon, DeviceZone, SlotId, ZoneAssignment, AssignmentResult, SensorProfile\nrequires:\n  []\naffects:\n  - S03\n  - S04\n  - S05\nkey_files:\n  - everything-presence-mmwave-configurator/backend/src/domain/coordinateTransform.ts\n  - everything-presence-mmwave-configurator/backend/src/domain/zoneCoverage.ts\n  - everything-presence-mmwave-configurator/backend/src/domain/zoneAssignment.ts\n  - everything-presence-mmwave-configurator/backend/src/__tests__/unit/coordinateTransform.test.ts\n  - everything-presence-mmwave-configurator/backend/src/__tests__/unit/zoneCoverage.test.ts\n  - everything-presence-mmwave-configurator/backend/src/__tests__/unit/zoneAssignment.test.ts\nkey_decisions:\n  - D011: ZoneRect center convention — compute corners from center x,y + half-extents matching frontend, not polygonUtils top-left convention\n  - D012: EP One exclusion by all-zero caps (profile-driven) rather than hardcoded device name\n  - D013: Backend isPointInPolygon duplicated from frontend rather than shared module — different runtimes make sharing not worth the complexity\npatterns_established:\n  - Pure-function domain modules in backend/src/domain/ — no side effects, no I/O, fully unit-testable\n  - Output types use begin/end format (DeviceZoneRect) matching firmware expectations while input types use center-based format matching frontend\n  - Coverage matrix pattern: computeAllCoverage returns number[][] indexed by [zoneIndex][sensorIndex], consumed by assignZonesToDevices\n  - Zone-type pool routing: regular→zone1-4, exclusion→exclusion1-2, entry→entry1-2 with profile-driven caps\nobservability_surfaces:\n  - none\ndrill_down_paths:\n  - .gsd/milestones/M004/slices/S01/tasks/T01-SUMMARY.md\n  - .gsd/milestones/M004/slices/S01/tasks/T02-SUMMARY.md\n  - .gsd/milestones/M004/slices/S01/tasks/T03-SUMMARY.md\nduration: \"\"\nverification_result: passed\ncompleted_at: 2026-03-31T10:20:27.669Z\nblocker_discovered: false\n---\n\n# S01: Coordinate transform + zone coverage engine\n\n**Three pure-function domain modules — coordinateTransform, zoneCoverage, zoneAssignment — with 89 unit tests proving correctness for all rotation quadrants, zone types, coverage analysis, and slot assignment including EP One exclusion.**\n\n## What Happened\n\nBuilt the complete zone math engine as three independent domain modules in `backend/src/domain/`, each with comprehensive unit tests.\n\n**T01 — coordinateTransform.ts (34 tests):** Room-space ↔ device-space transforms using the +90° rotation offset convention from the frontend's `buildRadarPath`. Core functions: `transformPoint`/`inverseTransformPoint` for point-level operations, `transformZoneToDeviceSpace` handling both ZoneRect (center→begin/end bounding box) and ZonePolygon (vertex-wise transform), `transformZoneToRoomSpace` as inverse for S05 downstream use, and `transformZonesToDeviceSpace` as batch wrapper. ZoneRect uses center-based convention matching the frontend (NOT the top-left convention in polygonUtils.ts). Rotated rects produce axis-aligned bounding boxes suitable for firmware. Inverse round-trips proven within 0.01mm tolerance across all quadrants and arbitrary angles.\n\n**T02 — zoneCoverage.ts (31 tests):** Grid-point sampling FOV cone analysis. `isPointInCone` checks distance + angle with proper wrap-around normalization and zero-distance guard. `getZoneSamplePoints` generates uniform grids within ZoneRect (center-based) and ZonePolygon (bounding-box filtered by ray-casting). `computeZoneCoverage` returns 0.0–1.0 fraction per sensor. `computeAllCoverage` produces zones×sensors matrix. Grid size configurable (default 10). Backend `isPointInPolygon` duplicated from frontend (15-line ray-casting — sharing across ESM/CJS runtimes not worth the build complexity).\n\n**T03 — zoneAssignment.ts (24 tests):** Coverage-threshold-gated slot allocation across three zone-type pools. `assignZonesToDevices` finds eligible sensors above configurable threshold (default 10%), sorts by coverage descending, allocates slots from correct pool (regular zone1-4, exclusion exclusion1-2, entry entry1-2). EP One devices detected by all-zero caps (profile-driven, not hardcoded name check) and excluded entirely per R012. Zones assigned to multiple qualifying sensors independently. Unassigned zones get structured reasons distinguishing no-eligible-sensors, below-threshold, and pool-full scenarios.\n\n## Verification\n\nRan full slice verification: `npx vitest run src/__tests__/unit/coordinateTransform.test.ts src/__tests__/unit/zoneCoverage.test.ts src/__tests__/unit/zoneAssignment.test.ts` — 89/89 tests pass (34 + 31 + 24) in 320ms. All three modules verified independently during task execution and again together at slice close.\n\n## Requirements Advanced\n\n- R001 — Validated — 34 unit tests prove room↔device-space transform for all rotations, ZoneRect and ZonePolygon, inverse round-trips within 0.01mm\n- R002 — Validated — 31 unit tests prove grid-point sampling coverage analysis with configurable threshold, batch matrix, polygon zones\n- R003 — Validated — 24 unit tests prove zone-to-slot assignment across 3 pool types with overflow handling and multi-sensor overlap\n- R012 — Validated — EP One devices with all-zero caps excluded entirely from assignment, 3 dedicated test cases\n\n## Requirements Validated\n\n- R001 — 34 unit tests in coordinateTransform.test.ts — all 4 rotation quadrants, polygons, inverse round-trips, offset sensors, edge cases\n- R002 — 31 unit tests in zoneCoverage.test.ts — FOV cone analysis, grid sampling, batch matrix, boundary conditions\n- R003 — 24 unit tests in zoneAssignment.test.ts — slot routing, threshold filtering, overflow, multi-sensor overlap\n- R012 — 3 test cases proving all-zero cap sensors are completely excluded from assignment\n\n## New Requirements Surfaced\n\nNone.\n\n## Requirements Invalidated or Re-scoped\n\nNone.\n\n## Deviations\n\nR003 (zone-to-device slot assignment) was listed with primary owner M004/S02 in REQUIREMENTS.md but the zone assignment engine was built in S01/T03 as planned in the S01 slice plan. The requirement is fully delivered.\n\n## Known Limitations\n\nNone. All planned functionality delivered and tested.\n\n## Follow-ups\n\nNone.\n\n## Files Created/Modified\n\n- `everything-presence-mmwave-configurator/backend/src/domain/coordinateTransform.ts` — New file — room↔device-space coordinate transforms with +90° offset convention\n- `everything-presence-mmwave-configurator/backend/src/domain/zoneCoverage.ts` — New file — grid-point sampling FOV cone coverage analysis\n- `everything-presence-mmwave-configurator/backend/src/domain/zoneAssignment.ts` — New file — zone-to-device slot assignment with coverage threshold gating\n- `everything-presence-mmwave-configurator/backend/src/__tests__/unit/coordinateTransform.test.ts` — New file — 34 tests for coordinate transforms\n- `everything-presence-mmwave-configurator/backend/src/__tests__/unit/zoneCoverage.test.ts` — New file — 31 tests for zone coverage\n- `everything-presence-mmwave-configurator/backend/src/__tests__/unit/zoneAssignment.test.ts` — New file — 24 tests for zone assignment\n",
+      "full_uat_md": "# S01: Coordinate transform + zone coverage engine — UAT\n\n**Milestone:** M004\n**Written:** 2026-03-31T10:20:27.669Z\n\n## UAT: S01 — Coordinate Transform + Zone Coverage Engine\n\n### Preconditions\n- Repository checked out on `feat/multi-device-rooms` branch (or descendant)\n- Node.js available, dependencies installed (`cd everything-presence-mmwave-configurator && npm install`)\n- No Docker or running services required — all tests are pure-function unit tests\n\n---\n\n### Test 1: Full domain module test suite passes\n**Steps:**\n1. `cd everything-presence-mmwave-configurator`\n2. `npx vitest run src/__tests__/unit/coordinateTransform.test.ts src/__tests__/unit/zoneCoverage.test.ts src/__tests__/unit/zoneAssignment.test.ts`\n\n**Expected:** 89 tests pass (34 + 31 + 24), 0 failures.\n\n---\n\n### Test 2: Coordinate transform — identity at origin\n**Steps:**\n1. Open `coordinateTransform.test.ts`, find test \"sensor at origin with 0° rotation → output matches input geometry\"\n2. Verify the test creates a ZoneRect at center (500, 500) with width 200, height 100\n3. Verify the transform with sensor at (0, 0, 0°) produces beginX/endX/beginY/endY matching center ± half-extents\n\n**Expected:** beginX=400, endX=600, beginY=450, endY=550 (or equivalent center-based calculation with +90° offset applied).\n\n---\n\n### Test 3: Coordinate transform — 90° rotation\n**Steps:**\n1. Find test for 90° rotation in coordinateTransform.test.ts\n2. Verify that X and Y coordinates swap with appropriate sign changes after rotation\n\n**Expected:** Coordinates rotate correctly — point (100, 0) from sensor at origin with 90° rotation maps to a device-space point consistent with the +90° offset convention.\n\n---\n\n### Test 4: Inverse round-trip within tolerance\n**Steps:**\n1. Find inverse round-trip tests in coordinateTransform.test.ts\n2. Verify tests transform a zone to device-space then back to room-space\n3. Check tolerance assertion\n\n**Expected:** All inverse round-trips recover original coordinates within 0.01mm for 0°, 90°, 180°, 270°, and arbitrary angles (137°).\n\n---\n\n### Test 5: Zone coverage — fully inside cone\n**Steps:**\n1. Open `zoneCoverage.test.ts`, find \"zone fully inside cone\" test\n2. Verify a zone positioned entirely within the sensor's FOV and range\n3. Check coverage result\n\n**Expected:** Coverage ≈ 1.0 (exact value depends on grid precision, but ≥ 0.9 for a zone well inside the cone).\n\n---\n\n### Test 6: Zone coverage — fully outside cone (behind sensor)\n**Steps:**\n1. Find \"zone behind sensor\" test in zoneCoverage.test.ts\n2. Verify zone positioned behind the sensor's forward direction\n\n**Expected:** Coverage = 0.0.\n\n---\n\n### Test 7: Zone coverage — beyond max range\n**Steps:**\n1. Find \"zone beyond max range\" test\n2. Verify zone positioned beyond the sensor's maxRangeMm\n\n**Expected:** Coverage = 0.0.\n\n---\n\n### Test 8: Zone coverage — batch 2×2 matrix\n**Steps:**\n1. Find \"batch 2 zones × 2 sensors\" test in zoneCoverage.test.ts\n2. Verify computeAllCoverage returns a number[][] with dimensions [2][2]\n\n**Expected:** Matrix has correct per-cell coverage fractions. Fully-covered cells ≈ 1.0, uncovered cells ≈ 0.0.\n\n---\n\n### Test 9: Zone assignment — sequential slot allocation\n**Steps:**\n1. Open `zoneAssignment.test.ts`, find sequential allocation test\n2. Verify 4 regular zones assigned to one sensor\n\n**Expected:** Slots allocated as zone1, zone2, zone3, zone4 in order.\n\n---\n\n### Test 10: Zone assignment — EP One exclusion\n**Steps:**\n1. Find EP One exclusion test in zoneAssignment.test.ts\n2. Verify sensor with maxZones=0, maxExclusionZones=0, maxEntryZones=0\n\n**Expected:** EP One sensor produces zero assignments. Zone goes to unassigned with reason indicating no eligible sensors (or is assigned to another sensor if one exists).\n\n---\n\n### Test 11: Zone assignment — slot overflow\n**Steps:**\n1. Find slot overflow test (5 regular zones, 4-slot sensor)\n2. Verify 5th zone handling\n\n**Expected:** First 4 zones get zone1–zone4 slots. 5th zone appears in unassigned with reason \"all zone slots full\" (or similar).\n\n---\n\n### Test 12: Zone assignment — zone type routing\n**Steps:**\n1. Find mixed zone type test (regular + exclusion + entry)\n2. Verify each type routes to its own slot pool\n\n**Expected:** Regular zone → zone1, exclusion zone → exclusion1, entry zone → entry1. No cross-pool contamination.\n\n---\n\n### Test 13: Zone assignment — coverage threshold filtering\n**Steps:**\n1. Find custom threshold test (0.5 threshold)\n2. Verify sensor with coverage below threshold is excluded\n\n**Expected:** Sensor with coverage 0.3 (below 0.5 threshold) does not receive the zone assignment. Zone either goes to a higher-coverage sensor or to unassigned.\n\n---\n\n### Edge Cases Verified by Test Suite\n- Negative rotation angles (e.g., -90°)\n- Rotation > 360° (wraps correctly)\n- Zero-dimension zones (width=0 or height=0)\n- Large coordinates (100,000mm)\n- Empty inputs (no zones, no sensors)\n- Undefined rotationDeg defaults to 0°\n- Polygon zones with irregular vertex sets\n- Zero-distance point (sensor position) treated as inside cone\n",
       "goal": "Three pure-function domain modules — coordinate transform, zone coverage, zone assignment — with comprehensive unit tests proving correctness for all rotation quadrants, zone types, coverage scenarios, and slot assignment edge cases including EP One exclusion.",
       "success_criteria": "- `coordinateTransform.ts` transforms ZoneRect (center-based) and ZonePolygon from room-space to device-space for arbitrary sensor positions and rotations, outputting begin/end format for downstream zoneWriter compatibility\n- `zoneCoverage.ts` computes numeric overlap percentage (0–1) per zone per sensor using grid-point sampling against the sensor's FOV cone, with configurable grid resolution\n- `zoneAssignment.ts` maps room zones to device zone slots (regular/exclusion/entry pools) respecting profile maxZones limits, skipping EP One devices (maxZones=0), and handling overflow when zones exceed available slots\n- All three modules export an inverse or batch convenience function for downstream use (inverse transform for S05, batch coverage for S03)\n- All unit tests pass: `cd everything-presence-mmwave-configurator/backend && npx vitest run src/__tests__/unit/`",
       "proof_level": "Contract — pure functions with unit tests, no runtime or HA integration required.",
@@ -357,11 +357,11 @@
       "completed_at": null,
       "full_summary_md": "",
       "full_uat_md": "",
-      "goal": "Prove the HA integration pipeline works end-to-end: MQTT client → discovery message → HA device; WS API → template helper → binary sensor with Jinja2 template. Retire the two biggest integration unknowns.",
-      "success_criteria": "- MQTT client connects to Mosquitto in Docker dev stack\n- MQTT discovery message creates a virtual device in HA device registry\n- WS API creates a template binary sensor helper\n- Template sensor appears in HA with correct Jinja2\n- Template sensor is attached to the MQTT-discovered device (or documented if not possible)\n- Cleanup: empty discovery payload removes device, WS API deletes template sensor",
-      "proof_level": "integration — verified against real HA in Docker dev stack",
-      "integration_closure": "Exports roomDeviceManager and templateSensorManager consumed by S04",
-      "observability_impact": "MQTT connection status logged. Template sensor creation success/failure logged.",
+      "goal": "Prove MQTT discovery creates a virtual HA room device with binary sensor entities whose Jinja2 value_templates implement occupancy aggregation referencing EP sensor zone entities. Prove the template generator produces correct Jinja2 for all aggregation strategies (OR, majority, no-change-on-tie, max target count).",
+      "success_criteria": "**Must-Haves:**\n- MQTT client wrapper connects to Mosquitto broker and publishes/subscribes with retain support\n- Template generator produces correct Jinja2 strings for OR, majority, no-change-on-tie, and max aggregation modes — verified by unit tests\n- Discovery payload builder produces correct MQTT discovery messages following the mock-devices pattern (device grouping via shared identifiers, correct topic format)\n- Room device service creates a virtual HA device with binary_sensor entities per zone and sensor entities for target count — each with value_template containing generated Jinja2\n- WsReadTransport exposes a public `call()` method (or equivalent) so downstream slices can use arbitrary WS commands\n- Unit tests cover template generation (all modes × single/multi sensor), discovery payload structure, and room device service logic (mock MQTT client)\n- Integration test proves device + entities appear in HA device/entity registry when running against Docker dev stack\n\n**Threat Surface:**\n- Abuse: MQTT topic injection via room/zone names containing `/` or `+`/`#` wildcards. Room IDs and zone IDs must be sanitized to `[a-zA-Z0-9_-]` before use in topic paths.\n- Data exposure: None — no PII, tokens, or secrets involved. MQTT broker in dev stack uses no auth.\n- Input trust: Room names flow into MQTT topic paths and discovery payloads. Must sanitize to prevent topic structure corruption.\n\n**Requirement Impact:**\n- Requirements touched: R005 (virtual HA room device — primary delivery), R006 (template sensors — partial, WS API exposure prepared but full template helper creation deferred to S04), R003 (zone slot assignment — entity name generation uses slot IDs from S01's assignment output)\n- Re-verify: None — no existing functionality modified\n- Decisions revisited: None\n\n**Proof Level:**\n- This slice proves: integration (MQTT discovery → HA device registry → entity creation with Jinja2 templates)\n- Real runtime required: yes (Docker dev stack with HA + Mosquitto for integration test)\n- Human/UAT required: no\n\n**Verification:**\n- `cd everything-presence-mmwave-configurator && npx vitest run src/__tests__/unit/templateGenerator.test.ts src/__tests__/unit/roomDeviceService.test.ts` — all unit tests pass\n- Integration test (manual with Docker dev stack): publish discovery for hardcoded test room, verify device + entities in HA via `listDevices()`/`listEntityRegistry()`, verify cleanup removes them\n\n**Observability / Diagnostics:**\n- Runtime signals: Structured pino logs for MQTT connect/disconnect/publish events with topic and QoS. Room device service logs device create/remove with room ID.\n- Inspection surfaces: MQTT client exposes `isConnected` property. Room device service methods return success/failure. HA device/entity registries queryable via existing WsReadTransport methods.\n- Failure visibility: MQTT connection errors surface via pino logger with broker URL (redacted credentials if any). Publish failures logged with topic path. HA registry verification failures return structured mismatch details.\n- Redaction constraints: MQTT broker credentials (if present) must not appear in logs.\n\n**Integration Closure:**\n- Upstream surfaces consumed: `dev/mock-devices/src/index.ts` (discovery payload pattern), `backend/src/ha/wsReadTransport.ts` (WS call method), `backend/src/domain/types.ts` (RoomConfig, SensorAttachment, Zone types), device profile JSON (zone entity templates)\n- New wiring introduced: `mqtt` npm dependency, MqttClient service, RoomDeviceService, templateGenerator module. NOT wired into app bootstrap — proof-only, no routes. Wiring into server lifecycle is S04's job.\n- What remains before the milestone is truly usable end-to-end: S03 (zone coordinate writes), S04 (lifecycle management + app bootstrap wiring + aggregation config UI persistence), S05 (frontend coverage visualization)",
+      "proof_level": "integration",
+      "integration_closure": "Upstream: mock-devices discovery pattern, WsReadTransport, domain types, device profiles. New: mqtt package, MqttClient, RoomDeviceService, templateGenerator. Not wired into app bootstrap — proof-only modules. S04 wires into lifecycle.",
+      "observability_impact": "Structured pino logs for MQTT connect/publish. MqttClient.isConnected property. Room device service logs create/remove. HA registries verify via existing WS methods.",
       "sequence": 0,
       "replan_triggered_at": null
     },
@@ -1748,6 +1748,178 @@
       "observability_impact": "",
       "full_plan_md": "",
       "sequence": 0
+    },
+    {
+      "milestone_id": "M004",
+      "slice_id": "S02",
+      "id": "T01",
+      "title": "Added mqtt v5.x dependency, MqttClient service wrapper, and discovery payload builder with 32 passing unit tests",
+      "status": "complete",
+      "one_liner": "Added mqtt v5.x dependency, MqttClient service wrapper, and discovery payload builder with 32 passing unit tests",
+      "narrative": "Implemented the MQTT foundation layer for HA room device creation. Added mqtt@^5.15.1 dependency, MqttConfig type extending AppConfig with optional MQTT_BROKER_URL env var, MqttClient wrapper following HaWriteClient service pattern (connect/disconnect/publish/isConnected), and discovery payload builder with pure functions for sanitization, topic construction, device blocks, and binary_sensor/sensor discovery payloads. All follow the mock-devices blueprint closely. 32 unit tests cover sanitization edge cases, topic formatting, payload completeness, device grouping, and negative cases.",
+      "verification_result": "- npx vitest run backend/src/__tests__/unit/discoveryPayload.test.ts — 32/32 tests pass\n- grep confirms mqtt dependency in package.json\n- tsc --noEmit clean with no type errors",
+      "duration": "",
+      "completed_at": "2026-03-31T10:50:36.640Z",
+      "blocker_discovered": false,
+      "deviations": "Test file uses backend/src/__tests__/unit/ path prefix (matching existing backend tests) rather than src/__tests__/unit/ from plan, because vitest runs from root directory.",
+      "known_issues": "None.",
+      "key_files": [
+        "everything-presence-mmwave-configurator/backend/src/ha/mqttClient.ts",
+        "everything-presence-mmwave-configurator/backend/src/ha/discoveryPayload.ts",
+        "everything-presence-mmwave-configurator/backend/src/__tests__/unit/discoveryPayload.test.ts",
+        "everything-presence-mmwave-configurator/backend/src/ha/types.ts",
+        "everything-presence-mmwave-configurator/backend/src/config.ts"
+      ],
+      "key_decisions": [
+        "Topic namespace uses ep_room/ prefix distinct from ep_mock/ to avoid collisions",
+        "sanitizeForMqtt returns 'unnamed' for empty/all-special-char inputs rather than throwing",
+        "Discovery payload builder uses pure functions with shared device block references for HA device grouping"
+      ],
+      "full_summary_md": "---\nid: T01\nparent: S02\nmilestone: M004\nkey_files:\n  - everything-presence-mmwave-configurator/backend/src/ha/mqttClient.ts\n  - everything-presence-mmwave-configurator/backend/src/ha/discoveryPayload.ts\n  - everything-presence-mmwave-configurator/backend/src/__tests__/unit/discoveryPayload.test.ts\n  - everything-presence-mmwave-configurator/backend/src/ha/types.ts\n  - everything-presence-mmwave-configurator/backend/src/config.ts\nkey_decisions:\n  - Topic namespace uses ep_room/ prefix distinct from ep_mock/ to avoid collisions\n  - sanitizeForMqtt returns 'unnamed' for empty/all-special-char inputs rather than throwing\n  - Discovery payload builder uses pure functions with shared device block references for HA device grouping\nduration: \"\"\nverification_result: passed\ncompleted_at: 2026-03-31T10:50:36.640Z\nblocker_discovered: false\n---\n\n# T01: Added mqtt v5.x dependency, MqttClient service wrapper, and discovery payload builder with 32 passing unit tests\n\n**Added mqtt v5.x dependency, MqttClient service wrapper, and discovery payload builder with 32 passing unit tests**\n\n## What Happened\n\nImplemented the MQTT foundation layer for HA room device creation. Added mqtt@^5.15.1 dependency, MqttConfig type extending AppConfig with optional MQTT_BROKER_URL env var, MqttClient wrapper following HaWriteClient service pattern (connect/disconnect/publish/isConnected), and discovery payload builder with pure functions for sanitization, topic construction, device blocks, and binary_sensor/sensor discovery payloads. All follow the mock-devices blueprint closely. 32 unit tests cover sanitization edge cases, topic formatting, payload completeness, device grouping, and negative cases.\n\n## Verification\n\n- npx vitest run backend/src/__tests__/unit/discoveryPayload.test.ts — 32/32 tests pass\n- grep confirms mqtt dependency in package.json\n- tsc --noEmit clean with no type errors\n\n## Verification Evidence\n\n| # | Command | Exit Code | Verdict | Duration |\n|---|---------|-----------|---------|----------|\n| 1 | `npx vitest run backend/src/__tests__/unit/discoveryPayload.test.ts` | 0 | ✅ pass | 2800ms |\n| 2 | `grep '\"mqtt\"' everything-presence-mmwave-configurator/package.json` | 0 | ✅ pass | 50ms |\n| 3 | `npx tsc --noEmit --project backend/tsconfig.json` | 0 | ✅ pass | 500ms |\n\n\n## Deviations\n\nTest file uses backend/src/__tests__/unit/ path prefix (matching existing backend tests) rather than src/__tests__/unit/ from plan, because vitest runs from root directory.\n\n## Known Issues\n\nNone.\n\n## Files Created/Modified\n\n- `everything-presence-mmwave-configurator/backend/src/ha/mqttClient.ts`\n- `everything-presence-mmwave-configurator/backend/src/ha/discoveryPayload.ts`\n- `everything-presence-mmwave-configurator/backend/src/__tests__/unit/discoveryPayload.test.ts`\n- `everything-presence-mmwave-configurator/backend/src/ha/types.ts`\n- `everything-presence-mmwave-configurator/backend/src/config.ts`\n",
+      "description": "## Description\n\nAdd the `mqtt` npm package (v5.x, same as mock-devices) to the backend and create two foundational modules:\n\n1. **MqttClient** (`backend/src/ha/mqttClient.ts`) — A thin wrapper around the `mqtt` package that manages broker connection, publish with retain, and disconnect. Follows the same service pattern as `HaWriteClient`: constructor takes config, exposes `connect()`, `disconnect()`, `publish()`, and `isConnected`. The config should accept `brokerUrl` string (e.g., `mqtt://mosquitto:1883`).\n\n2. **Discovery payload builder** (`backend/src/ha/discoveryPayload.ts`) — Functions that build MQTT discovery message payloads for HA, following the exact pattern from `dev/mock-devices/src/index.ts` `buildDiscoveryPayload()`. Key functions:\n   - `buildRoomDeviceBlock(roomId, roomName)` → the `device` object shared across all entities (identifiers, name, manufacturer, model)\n   - `buildBinarySensorDiscovery(roomId, roomName, zoneId, zoneName, valueTemplate, deviceBlock)` → complete discovery payload for a binary_sensor with `value_template`, `device_class: occupancy`, `state_topic`, `payload_on/off`, `availability_topic`\n   - `buildSensorDiscovery(roomId, roomName, zoneId, zoneName, valueTemplate, deviceBlock)` → discovery payload for a sensor (target count)\n   - `discoveryTopic(component, nodeId, objectId)` → builds `homeassistant/{component}/{nodeId}/{objectId}/config`\n   - `sanitizeForMqtt(input)` → strips non-`[a-zA-Z0-9_-]` characters from room/zone names for safe use in topics and identifiers\n\n**Topic structure convention:**\n- Node ID: `ep_room_{sanitizedRoomId}`\n- Object ID for zone occupancy: `zone_{zoneIndex}_occupancy`\n- Object ID for target count: `zone_{zoneIndex}_target_count`\n- State topic: `ep_room/{sanitizedRoomId}/{objectId}/state`\n- Availability topic: `ep_room/{sanitizedRoomId}/availability`\n\n**MQTT config:** Add `MqttConfig` interface to `backend/src/ha/types.ts` with `brokerUrl: string`. Add `mqtt?: MqttConfig` to `AppConfig` in `config.ts`, reading from `MQTT_BROKER_URL` env var (matching the docker-compose.dev.yaml convention). Make it optional — the backend should still start without MQTT configured.\n\n## Steps\n\n1. `cd everything-presence-mmwave-configurator && npm install mqtt` — add mqtt v5.x\n2. Add `MqttConfig` interface to `backend/src/ha/types.ts`: `{ brokerUrl: string }`\n3. Add `mqtt?: MqttConfig` to `AppConfig` in `backend/src/config.ts`, sourced from `MQTT_BROKER_URL` env var. Optional — no error if missing.\n4. Create `backend/src/ha/mqttClient.ts`:\n   - Constructor takes `MqttConfig`\n   - `async connect(): Promise<void>` — connects with `mqtt.connectAsync()`, logs success/failure\n   - `async publish(topic: string, payload: string | Buffer, retain?: boolean): Promise<void>` — publishes with QoS 1\n   - `async disconnect(): Promise<void>` — graceful close\n   - `get isConnected(): boolean`\n   - Structured pino logging for connect/disconnect/error events (broker URL only, no credentials in logs)\n5. Create `backend/src/ha/discoveryPayload.ts` with the functions listed above. Follow mock-devices `buildDiscoveryPayload()` pattern closely for the device block structure.\n6. Create `backend/src/__tests__/unit/discoveryPayload.test.ts`:\n   - Test `sanitizeForMqtt` with special characters, spaces, slashes, wildcards\n   - Test `discoveryTopic` format\n   - Test `buildRoomDeviceBlock` output structure\n   - Test `buildBinarySensorDiscovery` includes all required fields: unique_id, object_id, name, device, device_class, state_topic, payload_on, payload_off, value_template, availability_topic\n   - Test `buildSensorDiscovery` for target count entities\n   - Test that all identifiers use sanitized names\n7. Run tests: `npx vitest run src/__tests__/unit/discoveryPayload.test.ts`\n\n## Must-Haves\n\n- [ ] `mqtt` v5.x added to backend package.json dependencies\n- [ ] MqttClient wrapper with connect/publish/disconnect and isConnected\n- [ ] Discovery payload builder producing correct HA MQTT discovery payloads\n- [ ] sanitizeForMqtt strips MQTT-unsafe characters from topic components\n- [ ] All discovery payloads share device identifiers for correct HA device grouping\n- [ ] Unit tests for discovery payload builder pass\n\n## Verification\n\n- `cd everything-presence-mmwave-configurator && npx vitest run src/__tests__/unit/discoveryPayload.test.ts` — all tests pass\n- `grep '\"mqtt\"' everything-presence-mmwave-configurator/backend/package.json` confirms dependency added\n\n## Failure Modes\n\n| Dependency | On error | On timeout | On malformed response |\n|------------|----------|-----------|----------------------|\n| MQTT broker | Log error + throw, caller handles | mqtt.js has built-in reconnect; connect() rejects after configurable timeout | N/A — publish is fire-and-confirm via QoS 1 |\n\n## Negative Tests\n\n- sanitizeForMqtt with empty string, only special chars, MQTT wildcards (+, #), forward slashes\n- Discovery payload with empty room name, very long room name, unicode characters",
+      "estimate": "1h",
+      "files": [
+        "everything-presence-mmwave-configurator/backend/package.json",
+        "everything-presence-mmwave-configurator/backend/src/ha/types.ts",
+        "everything-presence-mmwave-configurator/backend/src/config.ts",
+        "everything-presence-mmwave-configurator/backend/src/ha/mqttClient.ts",
+        "everything-presence-mmwave-configurator/backend/src/ha/discoveryPayload.ts",
+        "everything-presence-mmwave-configurator/backend/src/__tests__/unit/discoveryPayload.test.ts"
+      ],
+      "verify": "cd everything-presence-mmwave-configurator && npx vitest run src/__tests__/unit/discoveryPayload.test.ts",
+      "inputs": [
+        "`dev/mock-devices/src/index.ts` — blueprint for discovery payload structure and device grouping pattern",
+        "`everything-presence-mmwave-configurator/backend/src/ha/types.ts` — existing HA type definitions to extend",
+        "`everything-presence-mmwave-configurator/backend/src/config.ts` — app config to add MQTT config",
+        "`everything-presence-mmwave-configurator/backend/package.json` — add mqtt dependency"
+      ],
+      "expected_output": [
+        "`everything-presence-mmwave-configurator/backend/src/ha/mqttClient.ts` — MQTT client wrapper service",
+        "`everything-presence-mmwave-configurator/backend/src/ha/discoveryPayload.ts` — discovery payload builder functions",
+        "`everything-presence-mmwave-configurator/backend/src/__tests__/unit/discoveryPayload.test.ts` — unit tests for payload builder",
+        "`everything-presence-mmwave-configurator/backend/src/ha/types.ts` — extended with MqttConfig interface",
+        "`everything-presence-mmwave-configurator/backend/src/config.ts` — extended with optional mqtt config"
+      ],
+      "observability_impact": "",
+      "full_plan_md": "",
+      "sequence": 0
+    },
+    {
+      "milestone_id": "M004",
+      "slice_id": "S02",
+      "id": "T02",
+      "title": "Create Jinja2 template generator with unit tests for all aggregation modes",
+      "status": "pending",
+      "one_liner": "",
+      "narrative": "",
+      "verification_result": "",
+      "duration": "",
+      "completed_at": null,
+      "blocker_discovered": false,
+      "deviations": "",
+      "known_issues": "",
+      "key_files": [],
+      "key_decisions": [],
+      "full_summary_md": "",
+      "description": "## Description\n\nCreate `backend/src/ha/templateGenerator.ts` — a pure-function module that generates Jinja2 template strings for HA value_template fields. This is the core logic of S02: translating zone-to-sensor assignments into correct Jinja2 that HA evaluates for occupancy aggregation.\n\nThe module needs no runtime dependencies — it takes entity ID strings and returns Jinja2 template strings. Fully unit-testable.\n\n**Functions to implement:**\n\n1. `generateOrTemplate(sensorEntityIds: string[]): string` — Returns Jinja2 that evaluates to `'ON'` if ANY sensor reports `'on'`, else `'OFF'`. Uses `is_state()` calls joined with `or`.\n   - Example for 2 sensors: `{{ 'ON' if is_state('binary_sensor.mock_ep_lite_1_zone_2_occupancy', 'on') or is_state('binary_sensor.mock_ep_lite_2_zone_1_occupancy', 'on') else 'OFF' }}`\n\n2. `generateMajorityTemplate(sensorEntityIds: string[]): string` — Returns Jinja2 that evaluates to `'ON'` if MORE THAN HALF of sensors report `'on'`, else `'OFF'`. Uses `states()` calls collected into a list, filtered with `select('eq', 'on')`, counted.\n\n3. `generateNoChangeOnTieTemplate(sensorEntityIds: string[], selfEntityId: string): string` — Returns Jinja2 that evaluates to `'ON'` if majority on, `'OFF'` if majority off, and holds the entity's own previous state on tie. Uses `states()` for self-reference.\n\n4. `generateMaxTargetCountTemplate(sensorEntityIds: string[]): string` — Returns Jinja2 that takes the max of `states()` calls with `|int(0)` fallback across all sensors. Output is the max integer.\n   - Example: `{{ [states('sensor.mock_ep_lite_1_zone_2_target_count') | int(0), states('sensor.mock_ep_lite_2_zone_1_target_count') | int(0)] | max }}`\n\n5. `generateTemplate(mode: AggregationMode, sensorEntityIds: string[], selfEntityId?: string): string` — Dispatcher that calls the correct generator based on mode. `AggregationMode` is a union type: `'or' | 'majority' | 'no_change_on_tie'`.\n\n**Type to export:** `type AggregationMode = 'or' | 'majority' | 'no_change_on_tie';`\n\n**Edge cases:**\n- Single sensor: OR and majority both simplify to direct `is_state()` check\n- Empty sensor list: return a template that evaluates to `'OFF'` (unavailable/no coverage)\n- No-change-on-tie with single sensor: degenerates to direct check (tie impossible with 1)\n- Max target count with single sensor: simplifies to `{{ states('sensor.x') | int(0) }}`\n\n## Steps\n\n1. Create `backend/src/ha/templateGenerator.ts` with all functions above\n2. Export `AggregationMode` type\n3. Create `backend/src/__tests__/unit/templateGenerator.test.ts` with comprehensive tests:\n   - OR mode: 1 sensor, 2 sensors, 3 sensors — verify correct `is_state()` calls and `or` chaining\n   - Majority mode: 1 sensor, 2 sensors, 3 sensors, 4 sensors — verify list construction and count comparison\n   - No-change-on-tie: 2 sensors (tie possible), 3 sensors (no tie possible with odd count, but template should still handle it), verify self-reference entity ID appears correctly\n   - Max target count: 1 sensor, 2 sensors, 3 sensors — verify `int(0)` fallbacks and `max` filter\n   - Empty sensor list: all modes return sensible fallback\n   - Dispatcher `generateTemplate()` routes to correct generator\n4. Run tests: `npx vitest run src/__tests__/unit/templateGenerator.test.ts`\n\n## Must-Haves\n\n- [ ] All four aggregation mode generators produce syntactically valid Jinja2\n- [ ] OR template uses `is_state()` with `or` chaining\n- [ ] Majority template uses `states()` list with `select('eq', 'on')` count comparison\n- [ ] No-change-on-tie template includes self-entity-id reference for tie fallback\n- [ ] Max target count template uses `int(0)` fallback and `max` filter\n- [ ] Edge cases (single sensor, empty list) handled\n- [ ] AggregationMode type exported\n- [ ] All unit tests pass\n\n## Verification\n\n- `cd everything-presence-mmwave-configurator && npx vitest run src/__tests__/unit/templateGenerator.test.ts` — all tests pass\n\n## Negative Tests\n\n- Empty sensor entity ID list for all aggregation modes\n- Single sensor for all modes (degenerate cases)",
+      "estimate": "45m",
+      "files": [
+        "everything-presence-mmwave-configurator/backend/src/ha/templateGenerator.ts",
+        "everything-presence-mmwave-configurator/backend/src/__tests__/unit/templateGenerator.test.ts"
+      ],
+      "verify": "cd everything-presence-mmwave-configurator && npx vitest run src/__tests__/unit/templateGenerator.test.ts",
+      "inputs": [
+        "`everything-presence-mmwave-configurator/config/device-profiles/everything_presence_lite.json` — zone entity template patterns (e.g., binary_sensor.${name}_zone_N_occupancy)",
+        "`everything-presence-mmwave-configurator/backend/src/ha/discoveryPayload.ts` — discovery payload builder from T01 (for understanding entity ID conventions)"
+      ],
+      "expected_output": [
+        "`everything-presence-mmwave-configurator/backend/src/ha/templateGenerator.ts` — Jinja2 template generator with AggregationMode type",
+        "`everything-presence-mmwave-configurator/backend/src/__tests__/unit/templateGenerator.test.ts` — comprehensive unit tests for all aggregation modes"
+      ],
+      "observability_impact": "",
+      "full_plan_md": "",
+      "sequence": 0
+    },
+    {
+      "milestone_id": "M004",
+      "slice_id": "S02",
+      "id": "T03",
+      "title": "Build RoomDeviceService and expose WsReadTransport.call() for downstream use",
+      "status": "pending",
+      "one_liner": "",
+      "narrative": "",
+      "verification_result": "",
+      "duration": "",
+      "completed_at": null,
+      "blocker_discovered": false,
+      "deviations": "",
+      "known_issues": "",
+      "key_files": [],
+      "key_decisions": [],
+      "full_summary_md": "",
+      "description": "## Description\n\nCreate the room device service (`backend/src/ha/roomDeviceService.ts`) that orchestrates MQTT discovery to create/remove virtual HA room devices with zone entities. Also expose the private `call()` method on `WsReadTransport` so downstream slices (S04) can use it for template helper creation.\n\n**RoomDeviceService** takes an `MqttClient` (from T01) and uses the discovery payload builder (T01) + template generator (T02) to publish MQTT discovery messages that create:\n- A virtual device in HA identified by `ep_room_{roomId}`\n- One `binary_sensor` per zone with `value_template` containing the Jinja2 aggregation template\n- One `sensor` per zone for target count with `value_template` containing the max template\n\nThe service also handles cleanup by publishing empty payloads to the same config topics.\n\n**Input data model:** The service accepts a room descriptor (not the full RoomConfig — just the subset needed):\n```typescript\ninterface RoomDeviceDescriptor {\n  roomId: string;\n  roomName: string;\n  zones: Array<{\n    zoneId: string;\n    zoneName: string;\n    zoneIndex: number;\n    aggregationMode: AggregationMode;\n    coveringSensorEntities: {\n      occupancy: string[];  // e.g., ['binary_sensor.mock_ep_lite_1_zone_2_occupancy']\n      targetCount: string[]; // e.g., ['sensor.mock_ep_lite_1_zone_2_target_count']\n    };\n  }>;\n}\n```\n\nThis descriptor is what S04 will build from zone assignments + device profiles. For S02, we hardcode test data.\n\n**Methods:**\n- `async createRoomDevice(descriptor: RoomDeviceDescriptor): Promise<void>` — publishes availability 'online', then discovery messages for all zone entities\n- `async removeRoomDevice(roomId: string, zoneCount: number): Promise<void>` — publishes empty payloads to all config topics to remove entities, then removes availability\n- `getDiscoveryTopics(roomId: string, zoneCount: number): string[]` — returns all topics that would be published to (for inspection/debugging)\n\n**WsReadTransport exposure:** Make `call()` public (change `private` to `public` on line 407 of wsReadTransport.ts). This is a purely internal class — there's no external API contract to break. The method signature `call(command: Record<string, unknown>): Promise<unknown>` is already correct for arbitrary WS commands. S04 will use this for `config/template/create` and `config/entity_registry/update` commands.\n\n## Steps\n\n1. In `backend/src/ha/wsReadTransport.ts`, change `private async call(` to `public async call(` (line 407). Also add `call(command: Record<string, unknown>): Promise<unknown>` to the `IHaReadTransport` interface in `readTransport.ts`. For `RestReadTransport`, add a stub that throws `new Error('WS call() not available in REST mode')`.\n2. Create `backend/src/ha/roomDeviceService.ts`:\n   - Import `MqttClient`, discovery payload builders, and template generators\n   - Define `RoomDeviceDescriptor` interface (export it)\n   - Implement `createRoomDevice()`: iterate zones, build discovery payloads with generated templates, publish each with retain:true\n   - Implement `removeRoomDevice()`: publish empty string to each config topic (retain:true to remove retained message)\n   - Implement `getDiscoveryTopics()` for debugging\n   - Log room device operations with pino (room ID, zone count, topics published)\n3. Create `backend/src/__tests__/unit/roomDeviceService.test.ts`:\n   - Mock MqttClient (track publish calls)\n   - Test `createRoomDevice()` with a 2-zone room covered by 2 sensors:\n     - Verify correct number of publish calls (availability + N binary_sensors + N sensors)\n     - Verify each publish topic matches expected format\n     - Verify each payload contains correct value_template from template generator\n     - Verify all payloads share the same device identifiers\n   - Test `removeRoomDevice()` publishes empty payloads to correct topics\n   - Test `getDiscoveryTopics()` returns expected topic list\n   - Test with empty zones array (should publish only availability)\n4. Run tests: `npx vitest run src/__tests__/unit/roomDeviceService.test.ts`\n\n## Must-Haves\n\n- [ ] RoomDeviceService creates correct MQTT discovery messages for binary_sensor and sensor entities\n- [ ] All entities under one room share identical device identifiers\n- [ ] value_template contains Jinja2 from template generator\n- [ ] Cleanup publishes empty payloads to remove entities\n- [ ] WsReadTransport.call() is public and on the IHaReadTransport interface\n- [ ] RestReadTransport has a throwing stub for call()\n- [ ] Unit tests pass with mocked MQTT client\n\n## Verification\n\n- `cd everything-presence-mmwave-configurator && npx vitest run src/__tests__/unit/roomDeviceService.test.ts` — all tests pass\n- `grep 'public async call' everything-presence-mmwave-configurator/backend/src/ha/wsReadTransport.ts` confirms visibility change\n\n## Observability Impact\n\n- Signals added: pino logs for room device create/remove with room ID, zone count, topic list\n- How a future agent inspects this: `getDiscoveryTopics()` returns all topics for a room — can be used to verify against MQTT broker\n- Failure state exposed: publish failures logged with topic path\n\n## Failure Modes\n\n| Dependency | On error | On timeout | On malformed response |\n|------------|----------|-----------|----------------------|\n| MqttClient.publish() | Log + rethrow — caller decides retry strategy | mqtt.js QoS 1 has built-in retry; publish() rejects if client disconnected | N/A — we build the payload, not receive it |",
+      "estimate": "1h",
+      "files": [
+        "everything-presence-mmwave-configurator/backend/src/ha/roomDeviceService.ts",
+        "everything-presence-mmwave-configurator/backend/src/ha/wsReadTransport.ts",
+        "everything-presence-mmwave-configurator/backend/src/ha/readTransport.ts",
+        "everything-presence-mmwave-configurator/backend/src/ha/restReadTransport.ts",
+        "everything-presence-mmwave-configurator/backend/src/__tests__/unit/roomDeviceService.test.ts"
+      ],
+      "verify": "cd everything-presence-mmwave-configurator && npx vitest run src/__tests__/unit/roomDeviceService.test.ts",
+      "inputs": [
+        "`everything-presence-mmwave-configurator/backend/src/ha/mqttClient.ts` — MQTT client from T01",
+        "`everything-presence-mmwave-configurator/backend/src/ha/discoveryPayload.ts` — payload builder from T01",
+        "`everything-presence-mmwave-configurator/backend/src/ha/templateGenerator.ts` — Jinja2 generator from T02",
+        "`everything-presence-mmwave-configurator/backend/src/ha/wsReadTransport.ts` — WS transport to expose call()",
+        "`everything-presence-mmwave-configurator/backend/src/ha/readTransport.ts` — IHaReadTransport interface to extend"
+      ],
+      "expected_output": [
+        "`everything-presence-mmwave-configurator/backend/src/ha/roomDeviceService.ts` — room device service with create/remove/getTopics",
+        "`everything-presence-mmwave-configurator/backend/src/__tests__/unit/roomDeviceService.test.ts` — unit tests with mocked MQTT",
+        "`everything-presence-mmwave-configurator/backend/src/ha/wsReadTransport.ts` — call() made public",
+        "`everything-presence-mmwave-configurator/backend/src/ha/readTransport.ts` — IHaReadTransport extended with call()"
+      ],
+      "observability_impact": "",
+      "full_plan_md": "",
+      "sequence": 0
+    },
+    {
+      "milestone_id": "M004",
+      "slice_id": "S02",
+      "id": "T04",
+      "title": "Integration test: verify room device + zone entities appear in HA via Docker dev stack",
+      "status": "pending",
+      "one_liner": "",
+      "narrative": "",
+      "verification_result": "",
+      "duration": "",
+      "completed_at": null,
+      "blocker_discovered": false,
+      "deviations": "",
+      "known_issues": "",
+      "key_files": [],
+      "key_decisions": [],
+      "full_summary_md": "",
+      "description": "## Description\n\nCreate an integration test script that boots the MQTT client, publishes discovery messages for a hardcoded test room, and verifies the virtual device + entities appear in HA's device and entity registries. Also verify cleanup removes them.\n\nThis test runs against the Docker dev stack (`cd dev && docker compose -f docker-compose.dev.yaml up -d`). It uses `MqttClient` to publish and `WsReadTransport` to verify via HA's WS API.\n\n**Test room descriptor (hardcoded):**\n- Room: 'bedroom' (id: 'bedroom_01')\n- 2 zones: 'Zone 1' (OR aggregation), 'Zone 2' (majority aggregation)\n- 2 covering sensors per zone: mock_ep_lite_1 (zone 2 slot), mock_ep_lite_2 (zone 1 slot)\n- Entity IDs reference the mock devices already in HA from the dev stack's mock-devices container:\n  - `binary_sensor.mock_ep_lite_1_zone_2_occupancy`, `binary_sensor.mock_ep_lite_2_zone_1_occupancy`\n  - `sensor.mock_ep_lite_1_zone_2_target_count`, `sensor.mock_ep_lite_2_zone_1_target_count`\n\n**Test flow:**\n1. Connect MqttClient to `mqtt://localhost:1883`\n2. Create RoomDeviceService with the client\n3. Call `createRoomDevice()` with the test descriptor\n4. Wait 2 seconds for HA to process discovery messages\n5. Connect WsReadTransport to HA and verify:\n   - `listDevices()` contains a device with identifier `ep_room_bedroom_01`\n   - `listEntityRegistry()` contains entities: `binary_sensor.ep_room_bedroom_01_zone_1_occupancy`, `binary_sensor.ep_room_bedroom_01_zone_2_occupancy`, `sensor.ep_room_bedroom_01_zone_1_target_count`, `sensor.ep_room_bedroom_01_zone_2_target_count`\n6. Call `removeRoomDevice()` to cleanup\n7. Wait 2 seconds for HA to process removal\n8. Verify entities no longer appear in registry\n9. Disconnect both clients\n\nThis test is placed in `backend/src/__tests__/integration/roomDevice.test.ts`. It requires the Docker dev stack to be running and should be excluded from normal `npx vitest run` (which only runs unit tests by default since the test pattern includes `src/__tests__/**/*.test.ts` — we'll use the specific path to run it).\n\n**Important:** The integration test needs the HA token from the dev stack. The docker-compose writes it to a shared volume. For local runs, the test can read it from the `HA_LONG_LIVED_TOKEN` env var or from the standard dev stack token path. If the Docker stack isn't running, the test should skip gracefully.\n\n## Steps\n\n1. Create `backend/src/__tests__/integration/roomDevice.test.ts`:\n   - Import MqttClient, RoomDeviceService, WsReadTransport\n   - Define hardcoded test descriptor\n   - `beforeAll`: Check if Docker stack is running (try connecting to MQTT on localhost:1883, skip test suite if not). Connect MqttClient. Load HA token from env or dev stack shared volume.\n   - Test: create room device → wait → verify in HA → cleanup → wait → verify removed\n   - `afterAll`: disconnect clients, ensure cleanup ran\n2. Add a vitest config section or separate script to run integration tests: `npx vitest run src/__tests__/integration/roomDevice.test.ts`\n3. Run the integration test against the dev stack (if running): `cd everything-presence-mmwave-configurator && npx vitest run src/__tests__/integration/roomDevice.test.ts`\n4. Run the full unit test suite to confirm no regressions: `npx vitest run src/__tests__/unit/`\n\n## Must-Haves\n\n- [ ] Integration test creates a virtual HA room device via MQTT discovery\n- [ ] Device appears in HA device registry with correct identifier\n- [ ] Binary sensor and sensor entities appear in HA entity registry with correct entity IDs\n- [ ] Cleanup removes device and entities from HA registries\n- [ ] Test skips gracefully if Docker dev stack isn't running\n- [ ] Existing unit tests still pass\n\n## Verification\n\n- `cd everything-presence-mmwave-configurator && npx vitest run src/__tests__/unit/` — all unit tests pass (regression check)\n- `cd everything-presence-mmwave-configurator && npx vitest run src/__tests__/integration/roomDevice.test.ts` — integration test passes (requires Docker dev stack)\n\n## Observability Impact\n\n- Signals added: integration test logs connection status, entity verification results\n- How a future agent inspects this: test output shows exactly which entities were found/missing in HA\n- Failure state exposed: test assertion messages include expected vs actual entity IDs\n\n## Failure Modes\n\n| Dependency | On error | On timeout | On malformed response |\n|------------|----------|-----------|----------------------|\n| MQTT broker (localhost:1883) | Skip test suite with descriptive message | 5s connection timeout → skip | N/A |\n| HA WS API (localhost:8123) | Skip test suite with descriptive message | 10s connection timeout → skip | Log raw response, fail test |\n| Mock devices not running | Entities won't exist for template reference — test still passes (templates reference entities but don't need them to exist for discovery) | N/A | N/A |",
+      "estimate": "1h",
+      "files": [
+        "everything-presence-mmwave-configurator/backend/src/__tests__/integration/roomDevice.test.ts"
+      ],
+      "verify": "cd everything-presence-mmwave-configurator && npx vitest run src/__tests__/integration/roomDevice.test.ts",
+      "inputs": [
+        "`everything-presence-mmwave-configurator/backend/src/ha/mqttClient.ts` — MQTT client from T01",
+        "`everything-presence-mmwave-configurator/backend/src/ha/roomDeviceService.ts` — room device service from T03",
+        "`everything-presence-mmwave-configurator/backend/src/ha/wsReadTransport.ts` — WS transport for HA registry verification",
+        "`everything-presence-mmwave-configurator/backend/src/ha/discoveryPayload.ts` — payload builder from T01",
+        "`everything-presence-mmwave-configurator/backend/src/ha/templateGenerator.ts` — template generator from T02"
+      ],
+      "expected_output": [
+        "`everything-presence-mmwave-configurator/backend/src/__tests__/integration/roomDevice.test.ts` — integration test proving HA room device lifecycle"
+      ],
+      "observability_impact": "",
+      "full_plan_md": "",
+      "sequence": 0
     }
   ],
   "decisions": [
@@ -1869,6 +2041,18 @@
       "rationale": "Device editor had a separate showDeviceEditor boolean while all other item editors derived visibility from selectedItem. User identified this as unnecessary special-casing. All item editors now use the same pattern: selectedItem drives visibility, onClose clears selectedItem.",
       "revisable": "No",
       "made_by": "collaborative",
+      "superseded_by": null
+    },
+    {
+      "seq": 21,
+      "id": "D011",
+      "when_context": "M004/S01/T02",
+      "scope": "architecture",
+      "decision": "Backend isPointInPolygon duplication vs shared module",
+      "choice": "Duplicated 15-line ray-casting isPointInPolygon in backend zoneCoverage.ts rather than creating a shared module between frontend and backend",
+      "rationale": "Frontend is ESM/browser, backend is CommonJS/Node. Sharing a 15-line pure function across runtimes isn't worth the build complexity. Both implementations use the same ray-casting algorithm.",
+      "revisable": "Yes",
+      "made_by": "agent",
       "superseded_by": null
     }
   ],
@@ -2257,6 +2441,39 @@
       "verdict": "✅ pass",
       "duration_ms": 3100,
       "created_at": "2026-03-31T10:18:07.938Z"
+    },
+    {
+      "id": 36,
+      "task_id": "T01",
+      "slice_id": "S02",
+      "milestone_id": "M004",
+      "command": "npx vitest run backend/src/__tests__/unit/discoveryPayload.test.ts",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 2800,
+      "created_at": "2026-03-31T10:50:36.640Z"
+    },
+    {
+      "id": 37,
+      "task_id": "T01",
+      "slice_id": "S02",
+      "milestone_id": "M004",
+      "command": "grep '\"mqtt\"' everything-presence-mmwave-configurator/package.json",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 50,
+      "created_at": "2026-03-31T10:50:36.640Z"
+    },
+    {
+      "id": 38,
+      "task_id": "T01",
+      "slice_id": "S02",
+      "milestone_id": "M004",
+      "command": "npx tsc --noEmit --project backend/tsconfig.json",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 500,
+      "created_at": "2026-03-31T10:50:36.640Z"
     }
   ]
 }
