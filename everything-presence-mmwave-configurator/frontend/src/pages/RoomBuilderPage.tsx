@@ -1,10 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useState, useRef } from 'react';
 import { fetchDevices, fetchProfiles, ingressAware } from '../api/client';
-import { fetchRooms, updateRoom } from '../api/rooms';
+import { fetchRooms, updateRoom, fetchDeviceZones } from '../api/rooms';
 import { applyRoomZones } from '../api/zones';
 import { RoomCanvas, type CanvasItemType } from '../components/RoomCanvas';
 import { DiscoveredDevice, DeviceProfile, RoomConfig, LiveState, FurnitureInstance, FurnitureType, Door, Zone, ZoneRect, ZonePolygon, isZoneRect, isZonePolygon, DevicePlacement, SensorAttachment } from '../api/types';
 import { SensorRenderInfo, SENSOR_COLORS } from '../components/canvas/types';
+import { transformDeviceZoneToRoom } from '../utils/coordinateTransform';
 import { useWallDrawing } from '../hooks/useWallDrawing';
 import { FurnitureLibrary } from '../components/FurnitureLibrary';
 import { FurnitureEditor } from '../components/FurnitureEditor';
@@ -106,6 +107,7 @@ export const RoomBuilderPage: React.FC<RoomBuilderPageProps> = ({
   const selectedDoorId = selectedItem?.type === 'door' ? selectedItem.id : null;
   const selectedZoneId = selectedItem?.type === 'zone' ? selectedItem.id : null;
   const selectedDeviceId = selectedItem?.type === 'device' ? selectedItem.id : null;
+  const [rawDeviceZones, setRawDeviceZones] = useState<{ deviceId: string; zones: Zone[] } | null>(null);
   const [zoneModeOverride, setZoneModeOverride] = useState<'rect' | 'polygon' | null>(null);
   const [isDoorPlacementMode, setIsDoorPlacementMode] = useState(false);
   const [doorDrag, setDoorDrag] = useState<{
@@ -175,6 +177,31 @@ export const RoomBuilderPage: React.FC<RoomBuilderPageProps> = ({
     [selectedDeviceId, selectedRoom?.sensors],
   );
 
+  // Fetch raw hardware zones when a sensor is selected in devices mode
+  useEffect(() => {
+    if (!selectedDeviceId || !selectedRoom || activeSection !== 'devices') {
+      setRawDeviceZones(null);
+      return;
+    }
+    let cancelled = false;
+    fetchDeviceZones(selectedRoom.id, selectedDeviceId)
+      .then(result => {
+        if (!cancelled) setRawDeviceZones({ deviceId: selectedDeviceId, zones: result.rawDeviceZones });
+      })
+      .catch(() => {
+        if (!cancelled) setRawDeviceZones(null);
+      });
+    return () => { cancelled = true; };
+  }, [selectedDeviceId, selectedRoom?.id, activeSection]);
+
+  // Re-transform raw device zones to room-space whenever placement changes.
+  // Only use zones that match the currently selected device — prevents stale flash.
+  const deviceZonesOverlay = useMemo(() => {
+    if (!rawDeviceZones || rawDeviceZones.deviceId !== selectedDeviceId || !selectedSensor?.placement) return undefined;
+    const placement = selectedSensor.placement;
+    return rawDeviceZones.zones.map(zone => transformDeviceZoneToRoom(zone, placement));
+  }, [rawDeviceZones, selectedDeviceId, selectedSensor?.placement]);
+
   const currentInstallationAngle =
     typeof liveState?.config?.installationAngle === 'number' ? liveState.config.installationAngle : null;
 
@@ -203,23 +230,41 @@ export const RoomBuilderPage: React.FC<RoomBuilderPageProps> = ({
     return null;
   }, [selectedRoom, getEntityId]);
 
-  const handleRotationSuggestion = useCallback(
-    (rotationDeg: number) => {
-      if (!selectedRoom || !isEplDevice) return;
-      const suggestion = getInstallationAngleSuggestion(rotationDeg, selectedRoom.roomShell?.points);
-      if (!suggestion) return;
-      if (lastRotationSuggestionRef.current === rotationDeg) return;
+  /**
+   * Automatically write the installation angle to the device when rotation changes.
+   * Replaces the old modal-based suggestion flow.
+   */
+  const writeInstallationAngle = useCallback(async (sensorId: string, rotationDeg: number) => {
+    if (!selectedRoom) return;
 
-      const entityId = resolveInstallationAngleEntityId();
-      if (!entityId) return;
+    const suggestion = getInstallationAngleSuggestion(rotationDeg, selectedRoom.roomShell?.points);
+    if (!suggestion) return;
 
-      setRotationSuggestion({ suggestedAngle: suggestion.suggestedAngle, targetAxis: suggestion.targetAxis });
-      setRotationSuggestionError(null);
-      setShowRotationSuggestion(true);
-      lastRotationSuggestionRef.current = rotationDeg;
-    },
-    [selectedRoom, isEplDevice, currentInstallationAngle, resolveInstallationAngleEntityId]
-  );
+    // Resolve entity ID for this specific sensor
+    let entityId: string | null = null;
+    entityId = getEntityId(sensorId, 'installationAngle');
+    if (!entityId) {
+      // Fallback: try room-level mapping
+      entityId = selectedRoom.entityMappings?.installationAngleEntity ?? null;
+    }
+    if (!entityId) return;
+
+    try {
+      const response = await fetch(ingressAware(`api/live/${sensorId}/entity`), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          entityId,
+          value: suggestion.suggestedAngle,
+        }),
+      });
+      if (!response.ok) {
+        console.error('[install-angle] Failed to write installation angle:', response.statusText);
+      }
+    } catch (err) {
+      console.error('[install-angle] Failed to write installation angle:', err);
+    }
+  }, [selectedRoom, getEntityId]);
 
   const applyInstallationAngleSuggestion = useCallback(async () => {
     if (!selectedRoom?.deviceId || !rotationSuggestion) return;
@@ -1137,6 +1182,13 @@ export const RoomBuilderPage: React.FC<RoomBuilderPageProps> = ({
           if (zoneResult.unassigned?.length) {
             console.warn('[apply-zones] unassigned zones:', zoneResult.unassigned);
           }
+          // Re-fetch device zones if a device is currently selected
+          // (zones on the hardware just changed)
+          if (selectedDeviceId) {
+            fetchDeviceZones(saved.id, selectedDeviceId)
+              .then(result => setRawDeviceZones({ deviceId: selectedDeviceId, zones: result.rawDeviceZones }))
+              .catch(() => {});
+          }
         } catch (zoneErr) {
           // Room data is already saved — zone write failure is non-fatal
           console.error('[apply-zones] failed:', zoneErr);
@@ -1278,70 +1330,12 @@ export const RoomBuilderPage: React.FC<RoomBuilderPageProps> = ({
     <div className="fixed inset-0 bg-slate-950 overflow-hidden">
       {/* Error Toast */}
       {error && (
-        <div className="absolute top-6 left-1/2 -translate-x-1/2 z-50 max-w-lg rounded-xl border border-rose-500/50 bg-rose-500/10 backdrop-blur px-6 py-3 text-rose-100 shadow-xl animate-in slide-in-from-top-4 fade-in">
+        <div className="absolute top-16 left-1/2 -translate-x-1/2 z-[70] max-w-lg rounded-xl border border-rose-500/50 bg-rose-500/10 backdrop-blur px-6 py-3 text-rose-100 shadow-xl animate-in slide-in-from-top-4 fade-in">
           {error}
         </div>
       )}
 
-      {/* Installation Angle Suggestion Modal */}
-      {showRotationSuggestion && rotationSuggestion && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center">
-          {/* Backdrop */}
-          <div
-            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
-            onClick={() => setShowRotationSuggestion(false)}
-          />
-          {/* Modal */}
-          <div className="relative z-10 w-full max-w-md mx-4 rounded-2xl border border-slate-700/50 bg-slate-900/95 backdrop-blur shadow-2xl animate-in zoom-in-95 fade-in duration-200">
-            <div className="p-6">
-              <div className="flex justify-center mb-4">
-                <div className="w-12 h-12 rounded-full bg-amber-500/20 flex items-center justify-center">
-                  <span className="text-xl">!</span>
-                </div>
-              </div>
-              <h3 className="text-xl font-bold text-white text-center mb-2">
-                Align zones to your walls?
-              </h3>
-              <p className="text-sm text-slate-300 text-center mb-4">
-                Based on your room outline, we can set the Installation Angle so zones stay square to the walls.
-              </p>
-              <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-center text-amber-200 text-sm font-semibold mb-4">
-                Suggested Installation Angle: {rotationSuggestion.suggestedAngle > 0 ? "+" : ""}{rotationSuggestion.suggestedAngle} deg
-              </div>
-              {isZeroSuggestion && !rotationSuggestionError && !isSuggestionApplied && (
-                <div className="mb-4 text-sm text-slate-300 text-center">
-                  Rotation already aligns with your walls. Installation angle can stay at 0.
-                </div>
-              )}
-              {isSuggestionApplied && !rotationSuggestionError && (
-                <div className="mb-4 text-sm text-emerald-300 text-center">
-                  Installation angle is already set to this value.
-                </div>
-              )}
-              {rotationSuggestionError && (
-                <div className="mb-4 text-sm text-rose-300 text-center">
-                  {rotationSuggestionError}
-                </div>
-              )}
-              <div className="flex gap-3">
-                <button
-                  onClick={() => setShowRotationSuggestion(false)}
-                  className="flex-1 rounded-xl border border-slate-600 bg-slate-800 px-4 py-2.5 text-sm font-semibold text-slate-200 transition-all hover:bg-slate-700 active:scale-95"
-                >
-                  Not now
-                </button>
-                <button
-                  onClick={applyInstallationAngleSuggestion}
-                  disabled={applyingInstallationAngle || isSuggestionApplied}
-                  className="flex-1 rounded-xl bg-gradient-to-r from-amber-600 to-amber-500 px-4 py-2.5 text-sm font-bold text-white shadow-lg shadow-amber-500/30 transition-all hover:shadow-xl hover:shadow-amber-500/40 disabled:opacity-50 active:scale-95"
-                >
-                  {isSuggestionApplied ? 'Already set' : applyingInstallationAngle ? 'Applying...' : 'Apply'}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Installation Angle Suggestion Modal — removed, angle is now written automatically on rotation commit */}
 
       {/* Editor Sidebar (left) */}
       <EditorSidebar
@@ -1535,8 +1529,14 @@ export const RoomBuilderPage: React.FC<RoomBuilderPageProps> = ({
                   zones={selectedRoom.zones ?? []}
                   selectedZoneId={selectedZoneId}
                   onZoneChange={activeSection === 'zones' ? handleZoneChange : undefined}
-                  showZones={showZones}
+                  showZones={activeSection !== 'devices' && showZones}
                   perSensorCoverageMap={allZonesPerSensorCoverageMap}
+                  deviceZones={activeSection === 'devices' ? deviceZonesOverlay : undefined}
+                  deviceZoneColor={(() => {
+                    if (!selectedDeviceId || !selectedRoom?.sensors) return undefined;
+                    const idx = selectedRoom.sensors.findIndex(s => s.deviceId === selectedDeviceId);
+                    return idx >= 0 ? SENSOR_COLORS[idx % SENSOR_COLORS.length] : undefined;
+                  })()}
                   roomShellFillMode={selectedRoom.roomShellFillMode}
                   floorMaterial={selectedRoom.floorMaterial}
                   showWalls={showWalls}
@@ -1666,7 +1666,7 @@ export const RoomBuilderPage: React.FC<RoomBuilderPageProps> = ({
                     deviceName={pendingDevice.name || pendingDevice.id}
                     onComplete={(mappings: EntityMappings) => {
                       // Compute a default placement at the room centroid
-                      const defaultPlacement = selectedRoom.devicePlacement ?? (() => {
+                      const defaultPlacement = (() => {
                         const c = selectedRoom.roomShell?.points?.length
                           ? computeCentroid(selectedRoom.roomShell.points)
                           : { x: 0, y: 0 };
@@ -2482,7 +2482,7 @@ export const RoomBuilderPage: React.FC<RoomBuilderPageProps> = ({
                   removeSensor(selectedSensor.deviceId);
                 }}
                 onClose={() => setSelectedItem(null)}
-                onRotationCommit={(angle) => handleRotationSuggestion(angle)}
+                onRotationCommit={(angle) => writeInstallationAngle(selectedSensor.deviceId, angle)}
               />
             );
           })()}

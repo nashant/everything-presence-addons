@@ -74,7 +74,7 @@ function noChangeOnTieDescriptor(): RoomDeviceDescriptor {
         zoneId: 'z0',
         zoneName: 'Bed Area',
         zoneIndex: 0,
-        aggregationMode: 'no_change_on_tie',
+        aggregationMode: 'majority',
         coveringSensorEntities: {
           occupancy: [
             'binary_sensor.ep_1_zone_0_occupancy',
@@ -236,6 +236,54 @@ describe('RoomDeviceService', () => {
       expect(mockMqtt.publishes[0].topic).toBe('ep_room/room-empty/availability');
       expect(mockMqtt.publishes[0].payload).toBe('online');
     });
+
+    it('does not publish room-level occupied entity via MQTT (managed by HA helper API)', async () => {
+      const descriptor = {
+        ...emptyZonesDescriptor(),
+        roomId: 'kitchen',
+        roomName: 'Kitchen',
+        roomOccupancy: {
+          sensorEntityIds: [
+            'binary_sensor.ep_lite_1_occupancy',
+            'binary_sensor.ep_lite_2_occupancy',
+          ],
+          aggregationMode: 'or' as const,
+        },
+      };
+
+      await service.createRoomDevice(descriptor);
+
+      // availability + select config + select state = 3 (no zone entities, no MQTT occupied)
+      expect(mockMqtt.publishes).toHaveLength(3);
+      expect(mockMqtt.publishes[0].topic).toBe('ep_room/kitchen/availability');
+      // No MQTT occupied entity should be published
+      const topics = mockMqtt.publishes.map((p) => p.topic);
+      expect(topics).not.toContain(
+        'homeassistant/binary_sensor/ep_room_kitchen/occupied/config',
+      );
+      // Select entity should be published
+      expect(topics).toContain(
+        'homeassistant/select/ep_room_kitchen/occupancy_mode/config',
+      );
+    });
+
+    it('publishes zone entities but not room-level occupied via MQTT', async () => {
+      const descriptor = {
+        ...twoZoneDescriptor(),
+        roomOccupancy: {
+          sensorEntityIds: ['binary_sensor.ep_lite_1_occupancy'],
+          aggregationMode: 'or' as const,
+        },
+      };
+
+      await service.createRoomDevice(descriptor);
+
+      // availability + 2 zones × (bs + sensor) + select config + select state = 7 (no MQTT occupied)
+      expect(mockMqtt.publishes).toHaveLength(7);
+      const topics = mockMqtt.publishes.map((p) => p.topic);
+      expect(topics).not.toContain('homeassistant/binary_sensor/ep_room_room-1/occupied/config');
+      expect(topics).toContain('homeassistant/binary_sensor/ep_room_room-1/zone_0_occupancy/config');
+    });
   });
 
   // ─────────────────────────────────────────────────────────────────
@@ -243,15 +291,15 @@ describe('RoomDeviceService', () => {
   // ─────────────────────────────────────────────────────────────────
 
   describe('removeRoomDevice', () => {
-    it('publishes empty payloads to all config topics + availability', async () => {
-      await service.removeRoomDevice('room-1', 2);
+    it('publishes empty payloads to all config topics + legacy occupied + select + availability', async () => {
+      await service.removeRoomDevice('room-1', 2, false);
 
-      // 2 zones × (bs + sensor) + 1 availability = 5
-      expect(mockMqtt.publishes).toHaveLength(5);
+      // legacy occupied + 2 zones × (bs + sensor) + select config + select state + availability = 8
+      expect(mockMqtt.publishes).toHaveLength(8);
     });
 
     it('publishes empty strings to config topics with retain', async () => {
-      await service.removeRoomDevice('room-1', 2);
+      await service.removeRoomDevice('room-1', 2, false);
 
       for (const pub of mockMqtt.publishes) {
         expect(pub.payload).toBe('');
@@ -260,7 +308,7 @@ describe('RoomDeviceService', () => {
     });
 
     it('config topics match expected format', async () => {
-      await service.removeRoomDevice('room-1', 2);
+      await service.removeRoomDevice('room-1', 2, false);
 
       const topics = mockMqtt.publishes.map((p) => p.topic);
       expect(topics).toContain(
@@ -279,18 +327,28 @@ describe('RoomDeviceService', () => {
     });
 
     it('availability is published last', async () => {
-      await service.removeRoomDevice('room-1', 2);
+      await service.removeRoomDevice('room-1', 2, false);
 
       const last = mockMqtt.publishes[mockMqtt.publishes.length - 1];
       expect(last.topic).toBe('ep_room/room-1/availability');
     });
 
-    it('zero zones publishes only availability removal', async () => {
-      await service.removeRoomDevice('room-1', 0);
+    it('zero zones publishes legacy occupied + select cleanup + availability', async () => {
+      await service.removeRoomDevice('room-1', 0, false);
 
-      expect(mockMqtt.publishes).toHaveLength(1);
-      expect(mockMqtt.publishes[0].topic).toBe('ep_room/room-1/availability');
-      expect(mockMqtt.publishes[0].payload).toBe('');
+      // legacy occupied + select config + select state + availability = 4
+      expect(mockMqtt.publishes).toHaveLength(4);
+    });
+
+    it('always clears legacy occupied + select MQTT messages during removal', async () => {
+      await service.removeRoomDevice('room-1', 1, true);
+
+      // legacy occupied + 1 zone × (bs + sensor) + select config + select state + availability = 6
+      expect(mockMqtt.publishes).toHaveLength(6);
+      const topics = mockMqtt.publishes.map((p) => p.topic);
+      expect(topics).toContain('homeassistant/binary_sensor/ep_room_room-1/occupied/config');
+      expect(topics).toContain('homeassistant/select/ep_room_room-1/occupancy_mode/config');
+      expect(topics).toContain('ep_room/room-1/availability');
     });
   });
 
@@ -300,7 +358,7 @@ describe('RoomDeviceService', () => {
 
   describe('getDiscoveryTopics', () => {
     it('returns correct topic list for 2-zone room', () => {
-      const topics = service.getDiscoveryTopics('room-1', 2);
+      const topics = service.getDiscoveryTopics('room-1', 2, false);
 
       // 1 availability + 2 × (bs + sensor) = 5
       expect(topics).toHaveLength(5);
@@ -319,11 +377,20 @@ describe('RoomDeviceService', () => {
       );
     });
 
-    it('returns only availability for zero zones', () => {
-      const topics = service.getDiscoveryTopics('room-1', 0);
+    it('returns only availability for zero zones without room occupancy', () => {
+      const topics = service.getDiscoveryTopics('room-1', 0, false);
 
       expect(topics).toHaveLength(1);
       expect(topics[0]).toBe('ep_room/room-1/availability');
+    });
+
+    it('includes room occupied topic when hasRoomOccupancy is true', () => {
+      const topics = service.getDiscoveryTopics('room-1', 1, true);
+
+      // 1 availability + 1 occupied + 1 × (bs + sensor) = 4
+      expect(topics).toHaveLength(4);
+      expect(topics[0]).toBe('ep_room/room-1/availability');
+      expect(topics[1]).toBe('homeassistant/binary_sensor/ep_room_room-1/occupied/config');
     });
 
     it('sanitizes room ID in topics', () => {

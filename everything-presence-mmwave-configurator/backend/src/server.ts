@@ -18,6 +18,7 @@ import { createFirmwareRouter } from './routes/firmware';
 import { createZoneBackupsRouter } from './routes/zoneBackups';
 import { createFloorsRouter } from './routes/floors';
 import { createImportRouter } from './routes/import';
+import type { HaHelperService } from './ha/haHelperService';
 import type { IHaReadTransport } from './ha/readTransport';
 import type { IHaWriteClient } from './ha/writeClient';
 import type { DeviceProfileLoader } from './domain/deviceProfiles';
@@ -37,6 +38,7 @@ export interface ServerDependencies {
   profileLoader: DeviceProfileLoader;
   transportStatus: TransportStatus;
   mqttClient?: import('./ha/mqttClient').MqttClient;
+  haHelperService?: HaHelperService;
 }
 
 export const createServer = (config: AppConfig, deps?: ServerDependencies): express.Express => {
@@ -53,7 +55,7 @@ export const createServer = (config: AppConfig, deps?: ServerDependencies): expr
 
   app.use('/api/meta', createMetaRouter(config, deps?.transportStatus));
   const roomsDeps: RoomsRouterDependencies | undefined = deps
-    ? { writeClient: deps.writeClient, profileLoader: deps.profileLoader, mqttClient: deps.mqttClient, readTransport: deps.readTransport }
+    ? { writeClient: deps.writeClient, profileLoader: deps.profileLoader, mqttClient: deps.mqttClient, readTransport: deps.readTransport, haHelperService: deps.haHelperService }
     : undefined;
   app.use('/api/rooms', createRoomsRouter(roomsDeps));
   app.use('/api/floors', createFloorsRouter());

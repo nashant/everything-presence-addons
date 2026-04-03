@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   generateOrTemplate,
+  generateAndTemplate,
   generateMajorityTemplate,
   generateNoChangeOnTieTemplate,
   generateMaxTargetCountTemplate,
@@ -227,31 +228,35 @@ describe('generateTemplate', () => {
     expect(dispatched).toBe(direct);
   });
 
-  it('routes "no_change_on_tie" to generateNoChangeOnTieTemplate', () => {
+  it('routes "majority" with even sensor count and selfEntityId to no_change_on_tie template', () => {
     const direct = generateNoChangeOnTieTemplate(
       [SENSOR_1, SENSOR_2],
       SELF_ENTITY,
     );
     const dispatched = generateTemplate(
-      'no_change_on_tie',
+      'majority',
       [SENSOR_1, SENSOR_2],
       SELF_ENTITY,
     );
     expect(dispatched).toBe(direct);
   });
 
-  it('throws if no_change_on_tie called without selfEntityId', () => {
-    expect(() =>
-      generateTemplate('no_change_on_tie', [SENSOR_1, SENSOR_2]),
-    ).toThrow("'no_change_on_tie' mode requires selfEntityId");
+  it('routes "majority" with odd sensor count to majority template', () => {
+    const direct = generateMajorityTemplate([SENSOR_1, SENSOR_2, 'binary_sensor.s3']);
+    const dispatched = generateTemplate('majority', [SENSOR_1, SENSOR_2, 'binary_sensor.s3'], SELF_ENTITY);
+    expect(dispatched).toBe(direct);
+  });
+
+  it('routes "and" to generateAndTemplate', () => {
+    const direct = generateAndTemplate([SENSOR_1, SENSOR_2]);
+    const dispatched = generateTemplate('and', [SENSOR_1, SENSOR_2]);
+    expect(dispatched).toBe(direct);
   });
 
   it('handles empty sensor list for all modes', () => {
     expect(generateTemplate('or', [])).toBe("{{ 'OFF' }}");
+    expect(generateTemplate('and', [])).toBe("{{ 'OFF' }}");
     expect(generateTemplate('majority', [])).toBe("{{ 'OFF' }}");
-    expect(generateTemplate('no_change_on_tie', [], 'self.entity')).toBe(
-      "{{ 'OFF' }}",
-    );
   });
 });
 
@@ -260,7 +265,7 @@ describe('generateTemplate', () => {
 // ---------------------------------------------------------------------------
 describe('AggregationMode type', () => {
   it('accepts valid mode values', () => {
-    const modes: AggregationMode[] = ['or', 'majority', 'no_change_on_tie'];
+    const modes: AggregationMode[] = ['or', 'and', 'majority'];
     modes.forEach((mode) => {
       // Should not throw — just verifying type compatibility at runtime
       expect(generateTemplate(mode, [SENSOR_1], SELF_ENTITY)).toBeTruthy();

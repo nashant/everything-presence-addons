@@ -85,6 +85,10 @@ interface RoomCanvasProps {
   onZoneVertexDrag?: (zoneId: string, vertexIndex: number, pos: { x: number; y: number }) => void;
   showZones?: boolean;
   perSensorCoverageMap?: Map<string, PerSensorCoverageEntry[]>;
+  /** Device-space zones read back from hardware, transformed to room-space. Non-editable overlay. */
+  deviceZones?: Zone[];
+  /** Color for device zone overlay (defaults to sensor color or amber). */
+  deviceZoneColor?: string;
   roomShellFillMode?: 'overlay' | 'material';
   floorMaterial?: string;
   // Multi-sensor support
@@ -254,6 +258,8 @@ export const RoomCanvas: React.FC<RoomCanvasProps> = ({
   onZoneChange,
   showZones = true,
   perSensorCoverageMap,
+  deviceZones,
+  deviceZoneColor = '#f59e0b',
   roomShellFillMode = 'overlay',
   floorMaterial = 'none',
   sensorPlacements,
@@ -886,6 +892,68 @@ export const RoomCanvas: React.FC<RoomCanvasProps> = ({
           getZoneCoverage,
           onZoneChange,
           perSensorCoverageMap,
+        )}
+
+        {/* Render device hardware zones (read-only overlay) */}
+        {deviceZones && deviceZones.length > 0 && (
+          <g style={{ pointerEvents: 'none' }}>
+            {deviceZones.map((zone, idx) => {
+              const zoneLabel = ('label' in zone && zone.label) || zone.id || null;
+              if ('vertices' in zone && Array.isArray((zone as ZonePolygon).vertices)) {
+                const poly = zone as ZonePolygon;
+                const canvasVerts = poly.vertices.map(v => canvasContext.toCanvasCoord(v));
+                const pathData = canvasVerts.map((v, i) => `${i === 0 ? 'M' : 'L'} ${v.x} ${v.y}`).join(' ') + ' Z';
+                return (
+                  <g key={`dz-${idx}`}>
+                    <path
+                      d={pathData}
+                      fill={`${deviceZoneColor}15`}
+                      stroke={deviceZoneColor}
+                      strokeWidth={2}
+                      strokeDasharray="6 3"
+                    />
+                    {zoneLabel && (() => {
+                      const cx = canvasVerts.reduce((s, v) => s + v.x, 0) / canvasVerts.length;
+                      const cy = canvasVerts.reduce((s, v) => s + v.y, 0) / canvasVerts.length;
+                      return (
+                        <text x={cx} y={cy} textAnchor="middle" dominantBaseline="middle"
+                          fill={deviceZoneColor} fontSize={12} fontWeight={600} opacity={0.8}>
+                          {zoneLabel}
+                        </text>
+                      );
+                    })()}
+                  </g>
+                );
+              } else {
+                const rect = zone as ZoneRect;
+                const topLeft = canvasContext.toCanvasCoord({ x: rect.x - rect.width / 2, y: rect.y - rect.height / 2 });
+                const bottomRight = canvasContext.toCanvasCoord({ x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 });
+                const w = bottomRight.x - topLeft.x;
+                const h = bottomRight.y - topLeft.y;
+                return (
+                  <g key={`dz-${idx}`}>
+                    <rect
+                      x={topLeft.x} y={topLeft.y} width={w} height={h}
+                      fill={`${deviceZoneColor}15`}
+                      stroke={deviceZoneColor}
+                      strokeWidth={2}
+                      strokeDasharray="6 3"
+                    />
+                    {zoneLabel && (() => {
+                      const cx = topLeft.x + w / 2;
+                      const cy = topLeft.y + h / 2;
+                      return (
+                        <text x={cx} y={cy} textAnchor="middle" dominantBaseline="middle"
+                          fill={deviceZoneColor} fontSize={12} fontWeight={600} opacity={0.8}>
+                          {zoneLabel}
+                        </text>
+                      );
+                    })()}
+                  </g>
+                );
+              }
+            })}
+          </g>
         )}
 
         {/* Build device element for non-interactive mode (Zone Editor) - passed to renderOverlay for z-order control */}

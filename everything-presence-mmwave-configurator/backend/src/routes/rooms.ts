@@ -8,6 +8,9 @@ import type { DeviceProfileLoader } from '../domain/deviceProfiles';
 import { RoomZoneOrchestrator } from '../domain/roomZoneOrchestrator';
 import { createOrUpdateRoomDevice, removeRoomDevice } from '../domain/roomDeviceLifecycle';
 import { RoomDeviceService } from '../ha/roomDeviceService';
+import type { HaHelperService } from '../ha/haHelperService';
+import { ZoneReader } from '../ha/zoneReader';
+import { transformZoneToRoomSpace, isDeviceZoneRect, type DeviceZone, type DeviceZoneRect, type DeviceZonePolygon } from '../domain/coordinateTransform';
 import { deviceEntityService } from '../domain/deviceEntityService';
 import { deviceMappingStorage } from '../config/deviceMappingStorage';
 import { logger } from '../logger';
@@ -17,6 +20,7 @@ export interface RoomsRouterDependencies {
   profileLoader: DeviceProfileLoader;
   mqttClient?: import('../ha/mqttClient').MqttClient;
   readTransport?: IHaReadTransport;
+  haHelperService?: HaHelperService;
 }
 
 export const createRoomsRouter = (deps?: RoomsRouterDependencies): Router => {
@@ -29,7 +33,7 @@ export const createRoomsRouter = (deps?: RoomsRouterDependencies): Router => {
     const label = typeof zone?.label === 'string' && zone.label.trim() ? zone.label.trim() : undefined;
 
     // Validate aggregationMode — only accept known values, omit otherwise
-    const VALID_AGGREGATION_MODES = ['or', 'majority', 'no_change_on_tie'] as const;
+    const VALID_AGGREGATION_MODES = ['or', 'and', 'majority'] as const;
     const rawMode = zone?.aggregationMode;
     const aggregationMode = VALID_AGGREGATION_MODES.includes(rawMode) ? rawMode : undefined;
 
@@ -321,6 +325,8 @@ export const createRoomsRouter = (deps?: RoomsRouterDependencies): Router => {
         ? body.doors.map(parseDoor).filter((d: Door | null) => d !== null)
         : undefined,
       metadata: body?.metadata ?? {},
+      aggregationMode: ['or', 'and', 'majority'].includes(body?.aggregationMode) ? body.aggregationMode : undefined,
+      occupancyHelperConfigEntryId: typeof body?.occupancyHelperConfigEntryId === 'string' ? body.occupancyHelperConfigEntryId : undefined,
     };
   };
 
@@ -342,14 +348,40 @@ export const createRoomsRouter = (deps?: RoomsRouterDependencies): Router => {
     res.json({ room });
   });
 
-  router.put('/:id', (req, res) => {
+  router.put('/:id', async (req, res) => {
     const existing = storage.getRoom(req.params.id);
     if (!existing) {
       return res.status(404).json({ message: 'Room not found' });
     }
     const room = normalizeRoom({ ...existing, ...req.body }, existing.id);
     storage.saveRoom(room);
-    return res.json({ room });
+
+    // Create/update room device when sensors are attached
+    const hasSensors = (room.sensors?.length ?? 0) > 0;
+    let roomDevice: { created: boolean; warnings: string[] } | null = null;
+    if (hasSensors && deps?.mqttClient) {
+      try {
+        const roomDeviceService = new RoomDeviceService(deps.mqttClient);
+        roomDevice = await createOrUpdateRoomDevice(room, [], {
+          roomDeviceService,
+          entityResolver: deviceEntityService,
+          haHelperService: deps.haHelperService,
+          readTransport: deps.readTransport,
+        });
+      } catch (err) {
+        logger.warn({ err, roomId: room.id }, 'Failed to create/update room device on save');
+      }
+    } else if (!hasSensors && deps?.mqttClient) {
+      // Sensors removed — clean up room device
+      try {
+        const roomDeviceService = new RoomDeviceService(deps.mqttClient);
+        await removeRoomDevice(room, { roomDeviceService, haHelperService: deps.haHelperService });
+      } catch (err) {
+        logger.warn({ err, roomId: room.id }, 'Failed to remove room device on save');
+      }
+    }
+
+    return res.json({ room, roomDevice });
   });
 
   router.get('/:id/zones', (req, res) => {
@@ -383,7 +415,7 @@ export const createRoomsRouter = (deps?: RoomsRouterDependencies): Router => {
     if (deps?.mqttClient) {
       try {
         const roomDeviceService = new RoomDeviceService(deps.mqttClient);
-        await removeRoomDevice(room, { roomDeviceService });
+        await removeRoomDevice(room, { roomDeviceService, haHelperService: deps.haHelperService });
       } catch (err) {
         // Cleanup failure is non-fatal — log warning and continue with deletion
         logger.warn({ err, roomId: room.id }, 'Failed to remove room device during deletion — continuing');
@@ -395,6 +427,154 @@ export const createRoomsRouter = (deps?: RoomsRouterDependencies): Router => {
       return res.status(404).json({ message: 'Room not found' });
     }
     return res.json({ ok: true });
+  });
+
+  /**
+   * GET /:roomId/sensors/:deviceId/device-zones
+   * Reads the actual hardware zones from a sensor device and transforms
+   * them from device-space back to room-space using the sensor's placement.
+   *
+   * Returns the zones as they exist on the hardware, projected into room
+   * coordinates. If the sensor has been moved since zones were applied,
+   * these will visually misalign with the room zones — which is the point.
+   */
+  router.get('/:roomId/sensors/:deviceId/device-zones', async (req, res) => {
+    const room = storage.getRoom(req.params.roomId);
+    if (!room) {
+      return res.status(404).json({ message: 'Room not found' });
+    }
+
+    const sensor = room.sensors?.find(s => s.deviceId === req.params.deviceId);
+    if (!sensor) {
+      return res.status(404).json({ message: 'Sensor not found in room' });
+    }
+
+    if (!deps?.readTransport || !deps?.profileLoader) {
+      return res.status(503).json({ message: 'HA connection not available' });
+    }
+
+    // Look up the device profile
+    const mapping = deviceMappingStorage.getMapping(sensor.deviceId);
+    const profileId = sensor.profileId ?? mapping?.profileId;
+    if (!profileId) {
+      return res.status(400).json({ message: 'No profile ID for sensor' });
+    }
+
+    const profile = deps.profileLoader.getProfileById(profileId);
+    if (!profile) {
+      return res.status(404).json({ message: 'Device profile not found' });
+    }
+
+    const storedPlacement = sensor.placement ?? { x: 0, y: 0, rotationDeg: 0 };
+
+    try {
+      // Read the device's actual installation angle from HA
+      let liveRotationDeg = storedPlacement.rotationDeg ?? 0;
+      const angleEntityId = deviceEntityService.getEntityId(sensor.deviceId, 'installationAngle');
+      if (angleEntityId) {
+        const angleState = await deps.readTransport.getState(angleEntityId);
+        if (angleState && angleState.state !== 'unavailable' && angleState.state !== 'unknown') {
+          const parsed = parseFloat(angleState.state);
+          if (Number.isFinite(parsed)) {
+            liveRotationDeg = parsed;
+          }
+        }
+      }
+
+      // Use stored position but live rotation angle for the transform
+      const placement = {
+        x: storedPlacement.x,
+        y: storedPlacement.y,
+        rotationDeg: liveRotationDeg,
+      };
+
+      const zoneReader = new ZoneReader(deps.readTransport);
+      const entityMap = profile.entityMap as any;
+
+      // Read zones in device-space
+      let deviceZones: Zone[] = [];
+
+      // Try polygon zones first (EP Lite uses these)
+      if (entityMap.polygonZoneEntities || entityMap.polygonExclusionEntities || entityMap.polygonEntryEntities) {
+        const entityMappings = room.entityMappings;
+        const entityNamePrefix = room.entityNamePrefix ?? '';
+        deviceZones = await zoneReader.readPolygonZones(entityMap, entityNamePrefix, entityMappings, sensor.deviceId);
+      }
+
+      // Fall back to rect zones
+      if (deviceZones.length === 0 && (entityMap.zoneConfigEntities || entityMap)) {
+        const entityMappings = room.entityMappings;
+        const entityNamePrefix = room.entityNamePrefix ?? '';
+        deviceZones = await zoneReader.readZones(entityMap, entityNamePrefix, entityMappings, sensor.deviceId);
+      }
+
+      // Build a map from device slot name to room zone label
+      // Device zones are named "Zone 1", "Zone 2", "Exclusion 1", "Entry 1" etc.
+      // Room zones are indexed 1-based matching the device slot order.
+      const roomZonesList = room.zones ?? [];
+      const slotToLabel = new Map<string, string>();
+      const regularZones = roomZonesList.filter(z => z.type === 'regular' || !z.type);
+      const exclusionZones = roomZonesList.filter(z => z.type === 'exclusion');
+      const entryZones = roomZonesList.filter(z => z.type === 'entry');
+      regularZones.forEach((z, i) => slotToLabel.set(`Zone ${i + 1}`, z.label ?? z.id));
+      exclusionZones.forEach((z, i) => slotToLabel.set(`Exclusion ${i + 1}`, z.label ?? z.id));
+      entryZones.forEach((z, i) => slotToLabel.set(`Entry ${i + 1}`, z.label ?? z.id));
+
+      // Attach room zone labels to raw device zones before returning
+      const labeledDeviceZones: Zone[] = deviceZones.map(zone => ({
+        ...zone,
+        label: slotToLabel.get(zone.id) ?? zone.id,
+      }));
+
+      // Transform each device-space zone to room-space
+      const roomZones: Zone[] = labeledDeviceZones.map(zone => {
+        // Device zones are Zone type (center-based rects or polygon vertices)
+        // but their coordinates are in device-space. Inverse-transform to room-space.
+        if ('vertices' in zone && Array.isArray((zone as ZonePolygon).vertices)) {
+          // Polygon: inverse-transform each vertex
+          const poly = zone as ZonePolygon;
+          const deviceZonePoly: DeviceZonePolygon = {
+            id: poly.id,
+            type: poly.type,
+            vertices: poly.vertices,
+            enabled: poly.enabled,
+            label: poly.label,
+          };
+          return transformZoneToRoomSpace(deviceZonePoly, placement);
+        } else {
+          // Rect: convert center-based to begin/end, then inverse-transform
+          const rect = zone as ZoneRect;
+          const halfW = rect.width / 2;
+          const halfH = rect.height / 2;
+          const deviceZoneRect: DeviceZoneRect = {
+            id: rect.id,
+            type: rect.type,
+            beginX: rect.x - halfW,
+            endX: rect.x + halfW,
+            beginY: rect.y - halfH,
+            endY: rect.y + halfH,
+            enabled: rect.enabled,
+            label: rect.label,
+          };
+          return transformZoneToRoomSpace(deviceZoneRect, placement);
+        }
+      });
+
+      return res.json({
+        deviceId: sensor.deviceId,
+        placement,
+        storedRotationDeg: storedPlacement.rotationDeg ?? 0,
+        liveRotationDeg: placement.rotationDeg,
+        rotationMismatch: Math.abs((storedPlacement.rotationDeg ?? 0) - placement.rotationDeg) > 1,
+        /** Raw zones in device-space with room labels (for frontend to re-transform) */
+        rawDeviceZones: labeledDeviceZones,
+        /** Pre-transformed zones in room-space (using live installation angle) */
+        zones: roomZones,
+      });
+    } catch (error) {
+      logger.error({ error, roomId: room.id, deviceId: sensor.deviceId }, 'Failed to read device zones');
+      return res.status(500).json({ message: 'Failed to read device zones' });
+    }
   });
 
   /**
@@ -444,6 +624,8 @@ export const createRoomsRouter = (deps?: RoomsRouterDependencies): Router => {
           roomDevice = await createOrUpdateRoomDevice(room, result.assignments, {
             roomDeviceService,
             entityResolver: deviceEntityService,
+            haHelperService: deps.haHelperService,
+            readTransport: deps.readTransport,
           });
         } catch (err) {
           // Room device creation failure is non-fatal — zone writes already succeeded

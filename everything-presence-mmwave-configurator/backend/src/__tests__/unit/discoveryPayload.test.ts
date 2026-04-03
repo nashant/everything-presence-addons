@@ -6,6 +6,7 @@ import {
   availabilityTopic,
   buildRoomDeviceBlock,
   buildBinarySensorDiscovery,
+  buildRoomOccupancyDiscovery,
   buildSensorDiscovery,
 } from '../../ha/discoveryPayload';
 
@@ -276,5 +277,27 @@ describe('buildSensorDiscovery', () => {
     const p1 = buildSensorDiscovery('r1', 'Room', 0, 'Z0', '{{ a }}', device);
     const p2 = buildBinarySensorDiscovery('r1', 'Room', 0, 'Z0', '{{ b }}', device);
     expect(p1.device).toBe(p2.device);
+  });
+
+  // ─── Room-level occupied entity ─────────────────────────────────
+
+  it('buildRoomOccupancyDiscovery produces correct payload', () => {
+    const payload = buildRoomOccupancyDiscovery('kitchen-1', 'Kitchen', "{{ 'ON' if is_state('bs.a', 'on') else 'OFF' }}", device);
+    expect(payload.unique_id).toBe('ep_room_kitchen-1_occupied');
+    expect(payload.object_id).toBe('occupied');
+    expect(payload.name).toBe('Kitchen Occupied');
+    expect(payload.device_class).toBe('occupancy');
+    expect(payload.state_topic).toBe('ep_room/kitchen-1/occupied/state');
+    expect(payload.availability_topic).toBe('ep_room/kitchen-1/availability');
+    expect(payload.value_template).toContain('is_state');
+    expect(payload.payload_on).toBe('ON');
+    expect(payload.payload_off).toBe('OFF');
+    expect(payload.device).toBe(device);
+  });
+
+  it('buildRoomOccupancyDiscovery sanitizes room ID', () => {
+    const payload = buildRoomOccupancyDiscovery('My Kitchen @#$', 'My Kitchen', '{{ a }}', device);
+    expect(payload.unique_id).toBe('ep_room_My_Kitchen_occupied');
+    expect(payload.state_topic).toBe('ep_room/My_Kitchen/occupied/state');
   });
 });

@@ -4,8 +4,11 @@
  * Pure functions: take entity ID strings, return Jinja2 template strings.
  * No runtime dependencies — fully unit-testable.
  *
- * These templates are used in MQTT discovery payloads for virtual room
- * devices that aggregate occupancy/target-count data from multiple
+ * Two flavours:
+ * - MQTT value_template: outputs 'ON'/'OFF' strings (used in MQTT discovery payloads)
+ * - Helper state template: outputs true/false booleans (used in HA template helpers)
+ *
+ * These templates aggregate occupancy/target-count data from multiple
  * EP sensor zone entities.
  */
 
@@ -14,7 +17,7 @@
 // ---------------------------------------------------------------------------
 
 /** Aggregation strategies for binary occupancy sensors. */
-export type AggregationMode = 'or' | 'majority' | 'no_change_on_tie';
+export type AggregationMode = 'or' | 'and' | 'majority';
 
 // ---------------------------------------------------------------------------
 // OR mode
@@ -36,6 +39,30 @@ export function generateOrTemplate(sensorEntityIds: string[]): string {
   const conditions = sensorEntityIds
     .map((id) => `is_state('${id}', 'on')`)
     .join(' or ');
+
+  return `{{ 'ON' if ${conditions} else 'OFF' }}`;
+}
+
+// ---------------------------------------------------------------------------
+// AND mode
+// ---------------------------------------------------------------------------
+
+/**
+ * Jinja2 template: ON if ALL sensors report 'on', else OFF.
+ * Uses `is_state()` calls joined with `and`.
+ *
+ * Single sensor:  {{ 'ON' if is_state('...', 'on') else 'OFF' }}
+ * Multi sensor:   {{ 'ON' if is_state('...', 'on') and is_state('...', 'on') else 'OFF' }}
+ * Empty list:     {{ 'OFF' }}
+ */
+export function generateAndTemplate(sensorEntityIds: string[]): string {
+  if (sensorEntityIds.length === 0) {
+    return "{{ 'OFF' }}";
+  }
+
+  const conditions = sensorEntityIds
+    .map((id) => `is_state('${id}', 'on')`)
+    .join(' and ');
 
   return `{{ 'ON' if ${conditions} else 'OFF' }}`;
 }
@@ -162,8 +189,9 @@ export function generateMaxTargetCountTemplate(sensorEntityIds: string[]): strin
  *
  * @param mode            - Aggregation strategy
  * @param sensorEntityIds - Binary sensor entity IDs to aggregate
- * @param selfEntityId    - Required for 'no_change_on_tie' mode (the
- *                          entity's own ID for tie-break self-reference)
+ * @param selfEntityId    - Required for 'majority' mode with even sensor
+ *                          count (entity's own ID for tie-break self-reference).
+ *                          Always pass it when available.
  */
 export function generateTemplate(
   mode: AggregationMode,
@@ -174,19 +202,181 @@ export function generateTemplate(
     case 'or':
       return generateOrTemplate(sensorEntityIds);
 
+    case 'and':
+      return generateAndTemplate(sensorEntityIds);
+
     case 'majority':
+      // Even sensor count can tie — use tie-handling variant when selfEntityId available
+      if (selfEntityId && sensorEntityIds.length > 1 && sensorEntityIds.length % 2 === 0) {
+        return generateNoChangeOnTieTemplate(sensorEntityIds, selfEntityId);
+      }
       return generateMajorityTemplate(sensorEntityIds);
 
-    case 'no_change_on_tie':
-      if (!selfEntityId) {
-        throw new Error(
-          "generateTemplate: 'no_change_on_tie' mode requires selfEntityId",
-        );
+    default: {
+      const _exhaustive: never = mode;
+      throw new Error(`Unknown aggregation mode: ${_exhaustive}`);
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Helper-compatible templates (true/false output for HA template helpers)
+// ---------------------------------------------------------------------------
+
+/**
+ * Jinja2 template for HA template helper: evaluates to true/false.
+ *
+ * OR mode: true if ANY sensor reports 'on'.
+ * Single:  {{ is_state('...', 'on') }}
+ * Multi:   {{ is_state('...', 'on') or is_state('...', 'on') }}
+ * Empty:   {{ false }}
+ */
+export function generateHelperOrTemplate(sensorEntityIds: string[]): string {
+  if (sensorEntityIds.length === 0) {
+    return '{{ false }}';
+  }
+
+  if (sensorEntityIds.length === 1) {
+    return `{{ is_state('${sensorEntityIds[0]}', 'on') }}`;
+  }
+
+  const conditions = sensorEntityIds
+    .map((id) => `  is_state('${id}', 'on')`)
+    .join('\n  or ');
+
+  return `{{\n${conditions}\n}}`;
+}
+
+/**
+ * Jinja2 template for HA template helper: evaluates to true/false.
+ *
+ * Majority mode: true if MORE THAN HALF of sensors report 'on'.
+ * Single:   {{ is_state('...', 'on') }}
+ * Multi:    {% set ... %}{{ count_on > total / 2 }}
+ * Empty:    {{ false }}
+ */
+export function generateHelperMajorityTemplate(sensorEntityIds: string[]): string {
+  if (sensorEntityIds.length === 0) {
+    return '{{ false }}';
+  }
+
+  if (sensorEntityIds.length === 1) {
+    return `{{ is_state('${sensorEntityIds[0]}', 'on') }}`;
+  }
+
+  const statesList = sensorEntityIds
+    .map((id) => `  states('${id}')`)
+    .join(',\n');
+
+  const total = sensorEntityIds.length;
+
+  return [
+    `{% set sensors = [`,
+    `${statesList}`,
+    `] %}`,
+    `{% set count_on = sensors | select('eq', 'on') | list | count %}`,
+    `{{ count_on > ${total} / 2 }}`,
+  ].join('\n');
+}
+
+/**
+ * Jinja2 template for HA template helper: evaluates to true/false.
+ *
+ * AND mode: true if ALL sensors report 'on'.
+ * Single:  {{ is_state('...', 'on') }}
+ * Multi:   {{ is_state('...', 'on') and is_state('...', 'on') }}
+ * Empty:   {{ false }}
+ */
+export function generateHelperAndTemplate(sensorEntityIds: string[]): string {
+  if (sensorEntityIds.length === 0) {
+    return '{{ false }}';
+  }
+
+  if (sensorEntityIds.length === 1) {
+    return `{{ is_state('${sensorEntityIds[0]}', 'on') }}`;
+  }
+
+  const conditions = sensorEntityIds
+    .map((id) => `  is_state('${id}', 'on')`)
+    .join('\n  and ');
+
+  return `{{\n${conditions}\n}}`;
+}
+
+/**
+ * Jinja2 template for HA template helper: evaluates to true/false (or
+ * holds previous state on tie).
+ *
+ * No-change-on-tie mode: true if majority on, false if majority off,
+ * hold previous state on exact tie.
+ *
+ * Single:  {{ is_state('...', 'on') }}
+ * Multi:   {% set ... %}{% if ... %}true{% elif ... %}false{% else %}{{ states('self') == 'on' }}{% endif %}
+ * Empty:   {{ false }}
+ */
+export function generateHelperNoChangeOnTieTemplate(
+  sensorEntityIds: string[],
+  selfEntityId: string,
+): string {
+  if (sensorEntityIds.length === 0) {
+    return '{{ false }}';
+  }
+
+  if (sensorEntityIds.length === 1) {
+    return `{{ is_state('${sensorEntityIds[0]}', 'on') }}`;
+  }
+
+  const statesList = sensorEntityIds
+    .map((id) => `  states('${id}')`)
+    .join(',\n');
+
+  const total = sensorEntityIds.length;
+
+  return [
+    `{% set sensors = [`,
+    `${statesList}`,
+    `] %}`,
+    `{% set count_on = sensors | select('eq', 'on') | list | count %}`,
+    `{% set total = ${total} %}`,
+    `{% if count_on > total / 2 %}`,
+    `  true`,
+    `{% elif count_on < total / 2 %}`,
+    `  false`,
+    `{% else %}`,
+    `  {{ is_state('${selfEntityId}', 'on') }}`,
+    `{% endif %}`,
+  ].join('\n');
+}
+
+/**
+ * Route to the correct helper-compatible template generator.
+ *
+ * Produces templates that evaluate to true/false for use with
+ * HA template helpers (not MQTT value_template which uses ON/OFF).
+ *
+ * @param mode            - Aggregation strategy
+ * @param sensorEntityIds - Binary sensor entity IDs to aggregate
+ * @param selfEntityId    - Required for 'no_change_on_tie' mode
+ */
+export function generateHelperTemplate(
+  mode: AggregationMode,
+  sensorEntityIds: string[],
+  selfEntityId?: string,
+): string {
+  switch (mode) {
+    case 'or':
+      return generateHelperOrTemplate(sensorEntityIds);
+
+    case 'and':
+      return generateHelperAndTemplate(sensorEntityIds);
+
+    case 'majority':
+      if (selfEntityId && sensorEntityIds.length > 1 && sensorEntityIds.length % 2 === 0) {
+        return generateHelperNoChangeOnTieTemplate(sensorEntityIds, selfEntityId);
       }
-      return generateNoChangeOnTieTemplate(sensorEntityIds, selfEntityId);
+      return generateHelperMajorityTemplate(sensorEntityIds);
 
     default: {
-      // Exhaustive check — TypeScript narrows to `never` here
       const _exhaustive: never = mode;
       throw new Error(`Unknown aggregation mode: ${_exhaustive}`);
     }

@@ -221,21 +221,31 @@ export const WizardPage: React.FC<WizardPageProps> = ({
   }, [selectedRoom, getEntityId]);
 
   const handleRotationSuggestion = useCallback(
-    (rotationDeg: number) => {
-      if (!selectedRoom || !isEplDevice) return;
+    async (rotationDeg: number) => {
+      if (!selectedRoom) return;
       const suggestion = getInstallationAngleSuggestion(rotationDeg, selectedRoom.roomShell?.points);
       if (!suggestion) return;
-      if (lastRotationSuggestionRef.current === rotationDeg) return;
 
       const entityId = resolveInstallationAngleEntityId();
-      if (!entityId) return;
+      if (!entityId || !selectedRoom.deviceId) return;
 
-      setRotationSuggestion({ suggestedAngle: suggestion.suggestedAngle, targetAxis: suggestion.targetAxis });
-      setRotationSuggestionError(null);
-      setShowRotationSuggestion(true);
-      lastRotationSuggestionRef.current = rotationDeg;
+      try {
+        const response = await fetch(ingressAware(`api/live/${selectedRoom.deviceId}/entity`), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            entityId,
+            value: suggestion.suggestedAngle,
+          }),
+        });
+        if (!response.ok) {
+          console.error('[install-angle] Failed to write installation angle:', response.statusText);
+        }
+      } catch (err) {
+        console.error('[install-angle] Failed to write installation angle:', err);
+      }
     },
-    [selectedRoom, isEplDevice, resolveInstallationAngleEntityId]
+    [selectedRoom, resolveInstallationAngleEntityId]
   );
 
   const applyInstallationAngleSuggestion = useCallback(async () => {
@@ -1312,58 +1322,7 @@ export const WizardPage: React.FC<WizardPageProps> = ({
           </div>
         )}
 
-        {/* Installation Angle Suggestion Modal */}
-        {showRotationSuggestion && rotationSuggestion && (
-          <div className="fixed inset-0 z-[60] flex items-center justify-center">
-            <div
-              className="absolute inset-0 bg-black/60 backdrop-blur-sm"
-              onClick={() => setShowRotationSuggestion(false)}
-            />
-            <div className="relative z-10 w-full max-w-md mx-4 rounded-2xl border border-slate-700/50 bg-slate-900/95 backdrop-blur shadow-2xl animate-in zoom-in-95 fade-in duration-200">
-              <div className="p-6">
-                <div className="flex justify-center mb-4">
-                  <div className="w-12 h-12 rounded-full bg-amber-500/20 flex items-center justify-center">
-                    <span className="text-xl">!</span>
-                  </div>
-                </div>
-                <h3 className="text-xl font-bold text-white text-center mb-2">
-                  Align zones to your walls?
-                </h3>
-                <p className="text-sm text-slate-300 text-center mb-4">
-                  Based on your room outline, we can set the Installation Angle so zones stay square to the walls.
-                </p>
-                <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-center text-amber-200 text-sm font-semibold mb-4">
-                  Suggested Installation Angle: {rotationSuggestion.suggestedAngle > 0 ? "+" : ""}{rotationSuggestion.suggestedAngle} deg
-                </div>
-                {isZeroSuggestion && !rotationSuggestionError && (
-                  <div className="mb-4 text-sm text-slate-300 text-center">
-                    Rotation already aligns with your walls. Installation angle can stay at 0.
-                  </div>
-                )}
-                {rotationSuggestionError && (
-                  <div className="mb-4 text-sm text-rose-300 text-center">
-                    {rotationSuggestionError}
-                  </div>
-                )}
-                <div className="flex gap-3">
-                  <button
-                    onClick={() => setShowRotationSuggestion(false)}
-                    className="flex-1 rounded-xl border border-slate-600 bg-slate-800 px-4 py-2.5 text-sm font-semibold text-slate-200 transition-all hover:bg-slate-700 active:scale-95"
-                  >
-                    Not now
-                  </button>
-                  <button
-                    onClick={applyInstallationAngleSuggestion}
-                    disabled={applyingInstallationAngle}
-                    className="flex-1 rounded-xl bg-gradient-to-r from-amber-600 to-amber-500 px-4 py-2.5 text-sm font-bold text-white shadow-lg shadow-amber-500/30 transition-all hover:shadow-xl hover:shadow-amber-500/40 disabled:opacity-50 active:scale-95"
-                  >
-                    {applyingInstallationAngle ? 'Applying...' : 'Apply'}
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
+        {/* Installation Angle Suggestion Modal — removed, angle is now written automatically on rotation commit */}
 
         {/* Floating Navigation Controls */}
         <div className="absolute top-6 left-6 z-40 flex items-center gap-3">

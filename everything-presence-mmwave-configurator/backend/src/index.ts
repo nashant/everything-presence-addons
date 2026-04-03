@@ -4,9 +4,11 @@ import { loadConfig, redactedHaConfig } from './config';
 import { logger } from './logger';
 import { createServer, TransportStatus } from './server';
 import { HaWriteClient } from './ha/writeClient';
+import { HaHelperService } from './ha/haHelperService';
 import { MqttClient } from './ha/mqttClient';
 import { createReadTransport, TransportFactoryResult } from './ha/transportFactory';
 import { DeviceProfileLoader } from './domain/deviceProfiles';
+import { RoomOccupancyManager } from './domain/roomOccupancyManager';
 import { createLiveWebSocketServer } from './routes/liveWs';
 import { createLanFirmwareServer } from './lanFirmwareServer';
 
@@ -76,6 +78,13 @@ const start = async () => {
       logger.info('No MQTT config — room device lifecycle will be unavailable');
     }
 
+    // 4b. Initialize HA Helper Service (for creating template helpers via HA API)
+    const haHelperService = new HaHelperService({
+      baseUrl: config.ha.baseUrl,
+      token: config.ha.token,
+    });
+    logger.info('HA helper service ready');
+
     // Build transport status for API exposure
     const transportStatus: TransportStatus = {
       readTransport: activeTransport,
@@ -91,6 +100,7 @@ const start = async () => {
       profileLoader,
       transportStatus,
       mqttClient,
+      haHelperService,
     });
 
     // 6. Create HTTP server
@@ -114,6 +124,14 @@ const start = async () => {
         },
         'Zone Configurator backend started',
       );
+
+      // 10. Initialize room occupancy manager (async, non-blocking)
+      if (mqttClient) {
+        const occupancyManager = new RoomOccupancyManager(haHelperService, readTransport, mqttClient);
+        occupancyManager.initialize().catch((err) => {
+          logger.error({ err }, 'Room occupancy manager initialization failed');
+        });
+      }
     });
   } catch (error) {
     logger.error({ error, message: (error as Error).message, stack: (error as Error).stack }, 'Failed to start backend');

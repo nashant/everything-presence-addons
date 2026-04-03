@@ -226,10 +226,15 @@ export interface RoomConfig {
   zones: Zone[];
   /** Sensors attached to this room. Replaces singular deviceId/profileId/devicePlacement. */
   sensors?: SensorAttachment[];
+  /** Room-level occupancy aggregation mode (default: 'or'). */
+  aggregationMode?: import('../ha/templateGenerator.js').AggregationMode;
 
   // Entity identification - NEW: entityMappings is preferred
   entityMappings?: EntityMappings;  // Resolved entity IDs from discovery
   entityNamePrefix?: string;        // DEPRECATED: Legacy fallback for template resolution
+
+  /** Config entry ID for the HA template helper binary sensor (room-level occupied). */
+  occupancyHelperConfigEntryId?: string;
 
   roomShell?: RoomShell;
   roomShellFillMode?: 'overlay' | 'material';

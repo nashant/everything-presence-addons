@@ -5,13 +5,20 @@
  * Takes a RoomConfig + ZoneAssignment[], resolves per-device zone entity IDs,
  * builds a RoomDeviceDescriptor, and calls createRoomDevice/removeRoomDevice.
  *
+ * Room-level "occupied" binary sensor is created as a HA template helper
+ * (not MQTT discovery) and attached to the MQTT room virtual device.
+ *
  * Pure functions for descriptor building; thin async wrappers for HA interaction.
  */
 
 import type { RoomConfig, Zone } from './types.js';
 import type { ZoneAssignment, SlotId } from './zoneAssignment.js';
 import type { RoomDeviceService, RoomDeviceDescriptor } from '../ha/roomDeviceService.js';
-import type { AggregationMode } from '../ha/templateGenerator.js';
+import { generateHelperTemplate, type AggregationMode } from '../ha/templateGenerator.js';
+import type { HaHelperService } from '../ha/haHelperService.js';
+import type { IHaReadTransport } from '../ha/readTransport.js';
+import { sanitizeForMqtt } from '../ha/discoveryPayload.js';
+import { storage } from '../config/storage.js';
 import { logger } from '../logger.js';
 
 const log = logger.child({ module: 'room-device-lifecycle' });
@@ -29,6 +36,10 @@ export interface IEntityResolver {
 export interface RoomDeviceLifecycleDeps {
   roomDeviceService: RoomDeviceService;
   entityResolver: IEntityResolver;
+  /** Optional — needed for creating room-level occupied helper via HA API. */
+  haHelperService?: HaHelperService;
+  /** Optional — needed for device registry lookup when creating helpers. */
+  readTransport?: IHaReadTransport;
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -83,6 +94,31 @@ export function buildRoomDeviceDescriptor(
 ): { descriptor: RoomDeviceDescriptor; warnings: string[] } {
   const warnings: string[] = [];
   const zones = room.zones ?? [];
+  const sensors = room.sensors ?? [];
+
+  // ── Room-level occupancy (always when sensors exist) ──
+  let roomOccupancy: RoomDeviceDescriptor['roomOccupancy'] = undefined;
+  if (sensors.length > 0) {
+    const sensorOccupancyIds: string[] = [];
+    for (const sensor of sensors) {
+      const entityId = entityResolver.getEntityId(sensor.deviceId, 'presence');
+      if (entityId) {
+        sensorOccupancyIds.push(entityId);
+      } else {
+        warnings.push(
+          `Sensor ${sensor.deviceId}: no entity mapping for 'presence' — excluded from room-level occupancy`,
+        );
+      }
+    }
+    if (sensorOccupancyIds.length > 0) {
+      roomOccupancy = {
+        sensorEntityIds: sensorOccupancyIds,
+        aggregationMode: room.aggregationMode ?? 'or',
+      };
+    }
+  }
+
+  // ── Zone-level entities ──
 
   // Build a map: zoneId → zone index (0-based, by position in room.zones)
   const zoneIndexMap = new Map<string, number>();
@@ -173,6 +209,7 @@ export function buildRoomDeviceDescriptor(
     descriptor: {
       roomId: room.id,
       roomName: room.name,
+      roomOccupancy,
       zones: descriptorZones,
     },
     warnings,
@@ -189,6 +226,9 @@ export function buildRoomDeviceDescriptor(
  * Builds the descriptor, skips if no zones have covering entities,
  * then publishes via RoomDeviceService. Re-publishing with the same
  * roomId updates the existing device.
+ *
+ * Also creates/updates the room-level "occupied" template helper via
+ * the HA config flow API, attaching it to the MQTT room device.
  */
 export async function createOrUpdateRoomDevice(
   room: RoomConfig,
@@ -201,10 +241,10 @@ export async function createOrUpdateRoomDevice(
     deps.entityResolver,
   );
 
-  if (descriptor.zones.length === 0) {
+  if (descriptor.zones.length === 0 && !descriptor.roomOccupancy) {
     log.warn(
       { roomId: room.id, warningCount: warnings.length },
-      'No zones with covering entities — skipping room device creation',
+      'No zones with covering entities and no sensors — skipping room device creation',
     );
     return { created: false, warnings };
   }
@@ -220,23 +260,134 @@ export async function createOrUpdateRoomDevice(
 
   await deps.roomDeviceService.createRoomDevice(descriptor);
 
+  // ── Room-level occupied template helper ──
+  if (descriptor.roomOccupancy && deps.haHelperService && deps.readTransport) {
+    try {
+      await createOrUpdateOccupancyHelper(room, descriptor, deps);
+    } catch (err) {
+      // Non-fatal — MQTT device and zone entities are already created
+      const msg = err instanceof Error ? err.message : String(err);
+      warnings.push(`Room occupied helper creation failed: ${msg}`);
+      log.error({ err, roomId: room.id }, 'Failed to create/update room occupied helper');
+    }
+  } else if (descriptor.roomOccupancy && !deps.haHelperService) {
+    warnings.push('Room occupied helper skipped — haHelperService not available');
+  }
+
   return { created: true, warnings };
+}
+
+/**
+ * Create or update the room-level "occupied" template binary sensor helper.
+ *
+ * - Looks up the MQTT room device in the HA device registry
+ * - Generates a helper-compatible Jinja2 template (true/false output)
+ * - Creates a new template helper via config flow, or updates existing one
+ * - Stores the config entry ID on the room config for future management
+ */
+async function createOrUpdateOccupancyHelper(
+  room: RoomConfig,
+  descriptor: RoomDeviceDescriptor,
+  deps: RoomDeviceLifecycleDeps,
+): Promise<void> {
+  const { haHelperService, readTransport } = deps;
+  if (!haHelperService || !readTransport || !descriptor.roomOccupancy) return;
+
+  const sanitizedRoomId = sanitizeForMqtt(room.id);
+  const roomOcc = descriptor.roomOccupancy;
+
+  // Find the HA device registry ID for this MQTT room device
+  const haDeviceId = await haHelperService.findRoomDeviceId(sanitizedRoomId, readTransport);
+  if (!haDeviceId) {
+    log.warn(
+      { roomId: room.id, sanitizedRoomId },
+      'Cannot create occupied helper — room device not found in HA device registry (may need a moment to register)',
+    );
+    return;
+  }
+
+  // Generate the helper-compatible template (true/false output)
+  const helperName = `${room.name} Occupied`;
+  // For majority mode with even sensor count, the self entity ID is needed for tie-break
+  const selfEntityId = `binary_sensor.${helperName.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '')}`;
+  const stateTemplate = generateHelperTemplate(
+    roomOcc.aggregationMode,
+    roomOcc.sensorEntityIds,
+    roomOcc.aggregationMode === 'majority' ? selfEntityId : undefined,
+  );
+
+  const existingEntryId = room.occupancyHelperConfigEntryId;
+
+  if (existingEntryId) {
+    // Update existing helper
+    log.info(
+      { roomId: room.id, configEntryId: existingEntryId },
+      'Updating existing room occupied helper',
+    );
+    await haHelperService.updateTemplateBinarySensor({
+      configEntryId: existingEntryId,
+      stateTemplate,
+      deviceId: haDeviceId,
+    });
+  } else {
+    // Create new helper
+    const result = await haHelperService.createTemplateBinarySensor({
+      name: helperName,
+      stateTemplate,
+      deviceClass: 'occupancy',
+      deviceId: haDeviceId,
+    });
+
+    // Persist the config entry ID on the room for future updates/deletion
+    const updatedRoom: RoomConfig = {
+      ...room,
+      occupancyHelperConfigEntryId: result.configEntryId,
+    };
+    storage.saveRoom(updatedRoom);
+
+    log.info(
+      { roomId: room.id, configEntryId: result.configEntryId, entityId: result.entityId },
+      'Room occupied helper created and config entry ID stored',
+    );
+  }
 }
 
 /**
  * Remove a virtual HA room device for the given room.
  * Publishes empty MQTT discovery payloads to clear retained messages.
+ * Also deletes the room-level occupied template helper if one exists.
  */
 export async function removeRoomDevice(
   room: RoomConfig,
-  deps: { roomDeviceService: RoomDeviceService },
+  deps: { roomDeviceService: RoomDeviceService; haHelperService?: HaHelperService },
 ): Promise<void> {
   const zoneCount = (room.zones ?? []).length;
+  const hasSensors = (room.sensors ?? []).length > 0;
 
   log.info(
-    { roomId: room.id, zoneCount },
+    { roomId: room.id, zoneCount, hasSensors },
     'Removing room device',
   );
 
-  await deps.roomDeviceService.removeRoomDevice(room.id, zoneCount);
+  // Delete the template helper first (before MQTT cleanup)
+  if (room.occupancyHelperConfigEntryId && deps.haHelperService) {
+    try {
+      await deps.haHelperService.deleteTemplateBinarySensor(room.occupancyHelperConfigEntryId);
+      // Clear the stored config entry ID
+      const updatedRoom: RoomConfig = { ...room };
+      delete updatedRoom.occupancyHelperConfigEntryId;
+      storage.saveRoom(updatedRoom);
+      log.info(
+        { roomId: room.id, configEntryId: room.occupancyHelperConfigEntryId },
+        'Room occupied helper deleted',
+      );
+    } catch (err) {
+      log.warn(
+        { err, roomId: room.id, configEntryId: room.occupancyHelperConfigEntryId },
+        'Failed to delete room occupied helper — continuing with MQTT cleanup',
+      );
+    }
+  }
+
+  await deps.roomDeviceService.removeRoomDevice(room.id, zoneCount, hasSensors);
 }

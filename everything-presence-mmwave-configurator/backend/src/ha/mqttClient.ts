@@ -89,4 +89,26 @@ export class MqttClient {
   get isConnected(): boolean {
     return this.client?.connected ?? false;
   }
+
+  /**
+   * Subscribe to a topic pattern and invoke the callback on each message.
+   * Uses QoS 1. The callback receives the topic and raw payload buffer.
+   */
+  async subscribe(
+    topicFilter: string,
+    callback: (topic: string, payload: Buffer) => void,
+  ): Promise<void> {
+    if (!this.client) {
+      throw new Error('MQTT client is not connected — call connect() first');
+    }
+
+    this.client.on('message', (topic: string, payload: Buffer) => {
+      // Only invoke callback if the topic matches the filter.
+      // For simple wildcard matching (+), delegate to the mqtt library's built-in routing.
+      callback(topic, payload);
+    });
+
+    await this.client.subscribeAsync(topicFilter, { qos: 1 });
+    log.info({ topicFilter }, 'Subscribed to MQTT topic');
+  }
 }

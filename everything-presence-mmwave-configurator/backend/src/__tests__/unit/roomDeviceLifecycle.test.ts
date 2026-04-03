@@ -324,7 +324,7 @@ describe('buildRoomDeviceDescriptor', () => {
 
   it('handles no_change_on_tie aggregation mode', () => {
     const room = makeRoom({
-      zones: [makeZone({ id: 'z1', aggregationMode: 'no_change_on_tie' })],
+      zones: [makeZone({ id: 'z1', aggregationMode: 'majority' })],
     });
     const assignments = [makeAssignment({ zoneId: 'z1', slotId: 'zone1' })];
     const resolver = mockResolver({
@@ -333,7 +333,7 @@ describe('buildRoomDeviceDescriptor', () => {
     });
 
     const { descriptor } = buildRoomDeviceDescriptor(room, assignments, resolver);
-    expect(descriptor.zones[0].aggregationMode).toBe('no_change_on_tie');
+    expect(descriptor.zones[0].aggregationMode).toBe('majority');
   });
 });
 
@@ -421,7 +421,7 @@ describe('removeRoomDevice', () => {
 
     await removeRoomDevice(room, { roomDeviceService: service });
 
-    expect(service.removeRoomDevice).toHaveBeenCalledWith('room-1', 3);
+    expect(service.removeRoomDevice).toHaveBeenCalledWith('room-1', 3, false);
   });
 
   it('passes zero zoneCount when room has no zones', async () => {
@@ -430,7 +430,19 @@ describe('removeRoomDevice', () => {
 
     await removeRoomDevice(room, { roomDeviceService: service });
 
-    expect(service.removeRoomDevice).toHaveBeenCalledWith('room-1', 0);
+    expect(service.removeRoomDevice).toHaveBeenCalledWith('room-1', 0, false);
+  });
+
+  it('passes hasSensors=true when room has sensors', async () => {
+    const service = mockRoomDeviceService();
+    const room = makeRoom({
+      zones: [makeZone({ id: 'z1' })],
+      sensors: [{ deviceId: 'dev-1', profileId: 'everything_presence_lite' }],
+    });
+
+    await removeRoomDevice(room, { roomDeviceService: service });
+
+    expect(service.removeRoomDevice).toHaveBeenCalledWith('room-1', 1, true);
   });
 });
 

@@ -38,3 +38,19 @@ export const deleteRoom = async (id: string) => {
   });
   return handle<{ ok: boolean }>(res);
 };
+
+/** Fetch the raw hardware zones from a sensor in device-space. */
+export const fetchDeviceZones = async (
+  roomId: string,
+  deviceId: string,
+): Promise<{
+  rawDeviceZones: import('./types').Zone[];
+  zones: import('./types').Zone[];
+  storedRotationDeg: number;
+  liveRotationDeg: number;
+  rotationMismatch: boolean;
+  placement: { x: number; y: number; rotationDeg?: number };
+}> => {
+  const res = await fetch(ingressAware(`api/rooms/${roomId}/sensors/${deviceId}/device-zones`));
+  return handle(res);
+};
